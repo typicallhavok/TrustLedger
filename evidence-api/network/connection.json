@@ -1,0 +1,70 @@
+{
+    "name": "fabric-network",
+    "version": "1.0.0",
+    "client": {
+      "organization": "Org1"
+    },
+    "channels": {
+      "mychannel": {
+        "orderers": [
+          {
+            "url": "grpcs://localhost:7050",
+            "tlsCACerts": {
+              "pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+            }
+          }
+        ],
+        "channelPeers": {
+          "peer0.org1.example.com": {
+            "url": "grpcs://localhost:7051",
+            "tlsCACerts": {
+              "pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+            }
+          }
+        }
+      }
+    },
+    "organizations": {
+      "Org1": {
+        "mspid": "Org1MSP",
+        "peers": [
+          "peer0.org1.example.com"
+        ],
+        "certificateAuthorities": [
+          "ca.org1.example.com"
+        ]
+      }
+    },
+    "orderers": {
+      "orderer.example.com": {
+        "url": "grpcs://localhost:7050",
+        "tlsCACerts": {
+          "pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+        }
+      }
+    },
+    "peers": {
+      "peer0.org1.example.com": {
+        "url": "grpcs://localhost:7051",
+        "tlsCACerts": {
+          "pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+        }
+      }
+    },
+    "certificateAuthorities": {
+      "ca.org1.example.com": {
+        "url": "https://localhost:7054",
+        "caName": "ca-org1",
+        "tlsCACerts": {
+          "pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+        },
+        "registrar": [
+          {
+            "enrollId": "admin",
+            "enrollSecret": "adminpw"
+          }
+        ]
+      }
+    }
+  }
+  
