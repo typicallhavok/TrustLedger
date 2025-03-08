@@ -18,47 +18,40 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
+      const users = JSON.parse(localStorage.getItem("users") || "[]");
+      
       if (!isLogin) {
         // Sign up logic
         if (password !== confirmPassword) {
           throw new Error("Passwords don't match");
         }
         
-        // Simulate user storage
-        const users = JSON.parse(localStorage.getItem("users") || "[]");
         const userExists = users.find((user: any) => user.email === email);
-        
         if (userExists) {
           throw new Error("User already exists");
         }
         
-        users.push({
+        const newUser = {
           email,
           password, // In a real app, this should be hashed
           isAdmin: false
-        });
+        };
 
+        users.push(newUser);
         localStorage.setItem("users", JSON.stringify(users));
         setIsLogin(true); // Switch to login view after successful signup
       } else {
         // Login logic
-        const users = JSON.parse(localStorage.getItem("users") || "[]");
         const user = users.find((user: any) => user.email === email && user.password === password);
-        
         if (!user) {
           throw new Error("Invalid email or password");
         }
         
-        // Check admin pin if provided
         const isAdmin = adminPin === "adminAlpha" || user.isAdmin;
-        
-        // Set user session
         localStorage.setItem("currentUser", JSON.stringify({
           email: user.email,
           isAdmin
         }));
-        
-        // Redirect to Home Page
         router.push("/home");
       }
     } catch (err: any) {
@@ -143,6 +136,15 @@ export default function LoginPage() {
             {isLoading ? 'Processing...' : isLogin ? 'Log In' : 'Sign Up'}
           </button>
         </form>
+
+        <div className="text-center mt-4">
+          <button 
+            onClick={() => setIsLogin(!isLogin)}
+            className="text-blue-400 hover:underline"
+          >
+            {isLogin ? "Don't have an account? Sign up" : "Already have an account? Log in"}
+          </button>
+        </div>
       </div>
     </div>
   );
