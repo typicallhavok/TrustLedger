@@ -39,14 +39,14 @@ type PeerConfig struct {
 }
 
 type CAConfig struct {
-	URL        string      `json:"url"`
-	CAName     string      `json:"caName"`
-	TLSCACerts TLSConfig   `json:"tlsCACerts"`
-	Registrar  []Registrar `json:"registrar"`
+	URL        string    `json:"url"`
+	CAName     string    `json:"caName"`
+	TLSCACerts TLSConfig `json:"tlsCACerts"`
+	Registrar  Registrar `json:"registrar"` // Change from []Registrar to Registrar (map)
 }
 
 type TLSConfig struct {
-	PEM string `json:"pem"`
+	PEM []string `json:"pem"` // Change from string to []string (array)
 }
 
 type Registrar struct {
@@ -129,7 +129,7 @@ func Generate() error {
 			config.Peers[peerName] = PeerConfig{
 				URL: fmt.Sprintf("grpcs://%s", peerHostList[i]),
 				TLSCACerts: TLSConfig{
-					PEM: certPEM,
+					PEM: []string{certPEM}, // Change from string to array
 				},
 			}
 		}
@@ -160,14 +160,12 @@ func Generate() error {
 		URL:    fmt.Sprintf("https://%s", caHost),
 		CAName: caOrgName,
 		TLSCACerts: TLSConfig{
-			PEM: caCertPEM,
+			PEM: []string{caCertPEM}, // Change from string to array
 		},
-		Registrar: []Registrar{
-			{
-				EnrollID:     "admin",
-				EnrollSecret: "adminpw",
-			},
-		},
+		Registrar: Registrar{
+			EnrollID:     "admin",
+			EnrollSecret: "adminpw",
+		}, // Change from slice to map
 	}
 
 	// Create directory if it doesn't exist
