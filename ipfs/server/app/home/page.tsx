@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { createDirectory } from "../../lib/ipfs"; // Update the import path as needed
 
 interface Case {
   id: string;
@@ -32,35 +33,34 @@ export default function HomePage() {
     setCases(storedCases);
   };
 
-  const handleAddCase = () => {
+  const handleAddCase = async () => {
     if (!newCase.title) return alert("Case title is required");
     setIsLoading(true);
 
-    const newCaseObj: Case = {
-      id: `CASE-${Date.now().toString().slice(-6)}`,
-      title: newCase.title,
-      description: newCase.description,
-      dateCreated: new Date().toISOString(),
-      createdBy: user?.email || "Unknown",
-    };
+    try {
+      const newCaseObj: Case = {
+        id: `CASE-${Date.now().toString().slice(-6)}`,
+        title: newCase.title,
+        description: newCase.description,
+        dateCreated: new Date().toISOString(),
+        createdBy: user?.email || "Unknown",
+      };
 
-    const updatedCases = [...cases, newCaseObj];
-    localStorage.setItem("criminalCases", JSON.stringify(updatedCases));
-    setCases(updatedCases);
-    setNewCase({ title: "", description: "" });
-    setIsLoading(false);
-    
-    // Redirect to the case file management page
-    router.push(`/case/${newCaseObj.id}`);
-  };
+      // Create IPFS directory for the case
+      const caseDirPath = `/my-files/${newCaseObj.id}`;
+      await createDirectory(caseDirPath, user?.email);
 
-  const handleDeleteCase = (caseId: string) => {
-    if (!user?.isAdmin) return alert("Only admins can delete cases");
-    if (!confirm("Are you sure you want to delete this case?")) return;
-
-    const updatedCases = cases.filter((c) => c.id !== caseId);
-    localStorage.setItem("criminalCases", JSON.stringify(updatedCases));
-    setCases(updatedCases);
+      const updatedCases = [...cases, newCaseObj];
+      localStorage.setItem("criminalCases", JSON.stringify(updatedCases));
+      setCases(updatedCases);
+      setNewCase({ title: "", description: "" });
+      
+    } catch (error) {
+      console.error("Error creating case:", error);
+      alert("Failed to create case directory. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -91,43 +91,31 @@ export default function HomePage() {
       </div>
 
       <div className="w-full max-w-4xl bg-gray-800 p-6 rounded-lg shadow-lg mt-6">
-        <h2 className="text-2xl font-semibold text-blue-400">All Cases</h2>
-        {cases.length === 0 ? (
-          <p className="text-gray-400 mt-2">No cases available.</p>
-        ) : (
-          <ul className="mt-4">
-            {cases.map((caseItem) => (
-              <li key={caseItem.id} className="border-b border-gray-600 p-4 flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg font-semibold">{caseItem.title}</h3>
-                  <p className="text-gray-400 text-sm">{caseItem.description}</p>
-                  <p className="text-gray-500 text-xs">Created by: {caseItem.createdBy} on {new Date(caseItem.dateCreated).toLocaleString()}</p>
-                </div>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => router.push(`/case/${caseItem.id}`)}
-                    className="bg-blue-500 px-3 py-1 rounded text-sm hover:bg-blue-600"
-                  >
-                    Manage Files
-                  </button>
-                  <button
-                    onClick={() => router.push(`/upload/${caseItem.id}`)}
-                    className="bg-yellow-500 px-3 py-1 rounded text-sm hover:bg-yellow-600"
-                  >
-                    Upload Files
-                  </button>
-                  <button
-                    onClick={() => handleDeleteCase(caseItem.id)}
-                    className="bg-red-600 px-3 py-1 rounded text-sm hover:bg-red-700"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+  <h2 className="text-2xl font-semibold text-blue-400">All Cases</h2>
+  {cases.length === 0 ? (
+    <p className="text-gray-400 mt-2">No cases available.</p>
+  ) : (
+    <ul className="mt-4">
+      {cases.map((caseItem) => (
+        <li key={caseItem.id} className="border-b border-gray-600 p-4 flex justify-between items-center">
+          <div>
+            <h3 className="text-lg font-semibold">{caseItem.title}</h3>
+            <p className="text-gray-400 text-sm">{caseItem.description}</p>
+            <p className="text-gray-500 text-xs">Created by: {caseItem.createdBy} on {new Date(caseItem.dateCreated).toLocaleString()}</p>
+          </div>
+          <div className="flex space-x-2">
+            <button
+              onClick={() => router.push(`/?caseId=${caseItem.id}`)}
+              className="bg-blue-500 px-3 py-1 rounded text-sm hover:bg-blue-600"
+            >
+              Details
+            </button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  )}
+</div>
     </div>
   );
 }

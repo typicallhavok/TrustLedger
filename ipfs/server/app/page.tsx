@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { uploadFile, listFiles, getFileContent, deleteFile, getAccessLogs, viewFile, getFileAccessLogs, clearLogs, exportLogsAsJson } from "../lib/ipfs";
+import { uploadFile, listFiles, getFileContent, getAccessLogs, viewFile, getFileAccessLogs, clearLogs, exportLogsAsJson } from "../lib/ipfs";
 import LoginPage from "./login/page";
 import ActivityTimeline from "../components/activity-timeline";
 
@@ -21,6 +21,7 @@ export default function Home() {
   const [currentFileForLogs, setCurrentFileForLogs] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
+  const [currentCaseId, setCurrentCaseId] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -29,18 +30,31 @@ export default function Home() {
         router.push("/login");
       } else {
         setUser(JSON.parse(currentUser));
-        loadFiles();
+        
+        // Extract caseId from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const caseId = urlParams.get('caseId');
+        setCurrentCaseId(caseId);
+        
+        // Moved loadFiles() to the separate useEffect below
         if (JSON.parse(currentUser).isAdmin) {
           loadAccessLogs();
         }
       }
     }
   }, [router]);
+  
+  // Add a separate useEffect that depends on currentCaseId
+  useEffect(() => {
+    if (user) {
+      loadFiles();
+    }
+  }, [currentCaseId, user]);
 
   const loadFiles = async () => {
     setIsLoading(true);
     try {
-      const fileList = await listFiles();
+      const fileList = await listFiles(currentCaseId, user?.email);
       setFiles(fileList);
     } catch (error) {
       console.error("Error loading files:", error);
@@ -88,8 +102,8 @@ export default function Home() {
     if (!file) return alert("Please select a file first!");
     setIsLoading(true);
     try {
-      // Pass user email to uploadFile function
-      const cid = await uploadFile(file, user?.email);
+      // Pass user email and caseId to uploadFile function
+      const cid = await uploadFile(file, user?.email, currentCaseId);
       alert(`File uploaded successfully! CID: ${cid}`);
       await loadFiles();
       if (user?.isAdmin) {
@@ -110,8 +124,8 @@ export default function Home() {
   const handleRetrieve = async (fileName: string) => {
     setIsLoading(true);
     try {
-      // Pass user email to getFileContent function
-      const blob = await getFileContent(fileName, user?.email);
+      // Pass user email and caseId to getFileContent function
+      const blob = await getFileContent(fileName, user?.email, currentCaseId);
       if (!blob) {
         alert("Error retrieving file");
         return;
@@ -143,8 +157,8 @@ export default function Home() {
   const handleView = async (fileName: string) => {
     setIsLoading(true);
     try {
-      // Pass user email to viewFile function
-      const url = await viewFile(fileName, user?.email);
+      // Pass user email and caseId to viewFile function
+      const url = await viewFile(fileName, user?.email, currentCaseId);
       if (!url) {
         alert("Error viewing file");
         return;
@@ -161,29 +175,6 @@ export default function Home() {
     } catch (error) {
       console.error("View failed:", error);
       alert(`View failed: ${error}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDelete = async (fileName: string) => {
-    if (!user?.isAdmin) {
-      alert("You don't have permission to delete files");
-      return;
-    }
-    
-    if (!confirm(`Are you sure you want to delete ${fileName}?`)) return;
-    
-    setIsLoading(true);
-    try {
-      // Pass user email to deleteFile function
-      await deleteFile(fileName, user?.email);
-      alert("File deleted successfully!");
-      await loadFiles();
-      await loadAccessLogs();
-    } catch (error) {
-      console.error("Delete failed:", error);
-      alert(`Delete failed: ${error}`);
     } finally {
       setIsLoading(false);
     }
@@ -275,27 +266,6 @@ export default function Home() {
     }
   };
 
-  const handleClearLogs = () => {
-    if (!user?.isAdmin) {
-      alert("You don't have permission to clear logs");
-      return;
-    }
-    
-    if (!confirm("Are you sure you want to clear all access logs? This action cannot be undone.")) return;
-    
-    try {
-      clearLogs();
-      loadAccessLogs();
-      setIsViewingAllLogs(false);
-      setIsViewingFileLogs(false);
-      setIsViewingTimeline(false);
-      alert("Logs cleared successfully!");
-    } catch (error) {
-      console.error("Clear logs failed:", error);
-      alert(`Clear logs failed: ${error}`);
-    }
-  };
-
   const formatTimestamp = (timestamp: string) => {
     return new Date(timestamp).toLocaleString();
   };
@@ -378,13 +348,6 @@ export default function Home() {
               disabled={isLoading}
             >
               Export Logs
-            </button>
-            <button 
-              onClick={handleClearLogs} 
-              className="bg-red-600 px-4 py-2 rounded hover:bg-red-700 transition"
-              disabled={isLoading}
-            >
-              Clear Logs
             </button>
           </div>
         </div>
@@ -479,13 +442,6 @@ export default function Home() {
                         disabled={isLoading}
                       >
                         Logs
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(file.name)} 
-                        className="bg-red-500 px-3 py-1 rounded text-sm flex-1"
-                        disabled={isLoading}
-                      >
-                        Delete
                       </button>
                     </>
                   )}
