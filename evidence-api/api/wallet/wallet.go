@@ -81,7 +81,7 @@ func runCAClient(fabricNetworkDir, walletPath, user, org, caHost string) error {
 		"--tls.certfiles", tlsCertPath,
 		"--mspdir", filepath.Join(walletPath, "admin"))
 	adminCmd.Env = append(os.Environ(),
-		fmt.Sprintf("FABRIC_CA_CLIENT_HOME=%s", walletPath))
+		fmt.Sprintf("FABRIC_CA_CLIENT_HOME=%s", filepath.Dir(walletPath))) // Set FABRIC_CA_CLIENT_HOME to the parent directory
 	output, err := adminCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to enroll admin: %v, output: %s", err, output)
@@ -99,7 +99,7 @@ func runCAClient(fabricNetworkDir, walletPath, user, org, caHost string) error {
 			"--id.type", "client",
 			"--tls.certfiles", tlsCertPath)
 		regCmd.Env = append(os.Environ(),
-			fmt.Sprintf("FABRIC_CA_CLIENT_HOME=%s", walletPath))
+			fmt.Sprintf("FABRIC_CA_CLIENT_HOME=%s", filepath.Dir(walletPath))) // Set FABRIC_CA_CLIENT_HOME to the parent directory
 		output, err = regCmd.CombinedOutput()
 		if err != nil {
 			// Ignore if user already exists
@@ -113,7 +113,7 @@ func runCAClient(fabricNetworkDir, walletPath, user, org, caHost string) error {
 			"--tls.certfiles", tlsCertPath,
 			"--mspdir", filepath.Join(walletPath, user))
 		userCmd.Env = append(os.Environ(),
-			fmt.Sprintf("FABRIC_CA_CLIENT_HOME=%s", walletPath))
+			fmt.Sprintf("FABRIC_CA_CLIENT_HOME=%s", filepath.Dir(walletPath))) // Set FABRIC_CA_CLIENT_HOME to the parent directory
 		output, err = userCmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("failed to enroll %s: %v, output: %s", user, err, output)
