@@ -4,3 +4,5 @@ evidence-api/api/connection-org1.json
 evidence-api/api/wallet/admin
 evidence-api/api/wallet/appUser
 evidence-api/api/fabric-ca-client-config.yaml
+admin.id
+appUser.id
