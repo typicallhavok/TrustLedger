@@ -5,7 +5,6 @@ import { uploadFile, listFiles, getFileContent, getAccessLogs, viewFile, getFile
 import LoginPage from "./login/page";
 import ActivityTimeline from "../components/activity-timeline";
 
-
 export default function Home() {
   const router = useRouter();
   const [user, setUser] = useState<{ email: string; isAdmin: boolean } | null>(null);
@@ -23,6 +22,16 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [currentCaseId, setCurrentCaseId] = useState<string | null>(null);
+  const [showEvidenceForm, setShowEvidenceForm] = useState<boolean>(false);
+  const [evidenceDetails, setEvidenceDetails] = useState({
+    location: "",
+    gps: "",
+    timestamp: new Date().toISOString().slice(0, 16),
+    retriever: "",
+    handler: "",
+    device_type: "",
+    status: "Stored"
+  });
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -51,7 +60,6 @@ export default function Home() {
       loadFiles();
     }
   }, [currentCaseId, user]);
-
 
   const loadFiles = async () => {
     setIsLoading(true);
@@ -100,19 +108,25 @@ export default function Home() {
     }
   };
 
-  const [evidenceDetails, setEvidenceDetails] = useState({
-    location: "",
-    gps: "",
-    timestamp: new Date().toISOString().slice(0, 16),
-    retriever: "",
-    handler: "",
-    device_type: "",
-    status: "Stored"
-  });
+  const handleEvidenceFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setEvidenceDetails(prevState => ({
+      ...prevState,
+      [name]: value
+    }));
+  };
 
-  const [showEvidenceForm, setShowEvidenceForm] = useState(false);
   const handleUpload = async () => {
     if (!file) return alert("Please select a file first!");
+    setShowEvidenceForm(true);
+  };
+
+  const handleEvidenceFormSubmit = async () => {
+    if (!file) {
+      alert("Please select a file first!");
+      return;
+    }
+
     setIsLoading(true);
     try {
       // Pass user email and caseId to uploadFile function
@@ -120,7 +134,7 @@ export default function Home() {
 
       // Add blockchain evidence after successful IPFS upload
       try {
-        await addBlockchainEvidence(file, user?.email, cid);
+        await addBlockchainEvidence(file, user?.email, cid, evidenceDetails);
         alert(`File uploaded successfully and recorded on blockchain! CID: ${cid}`);
       } catch (blockchainError) {
         console.error("Blockchain recording failed:", blockchainError);
@@ -135,6 +149,7 @@ export default function Home() {
       // Reset the file input
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
+      setShowEvidenceForm(false);
     } catch (error) {
       console.error("Upload failed:", error);
       alert(`Upload failed: ${error}`);
@@ -392,6 +407,80 @@ export default function Home() {
           {isLoading ? 'Processing...' : 'Upload to IPFS'}
         </button>
       </div>
+
+      {/* Evidence Form */}
+      {showEvidenceForm && (
+        <div className="w-full max-w-lg bg-gray-800 p-6 mt-6 rounded-lg shadow-lg">
+          <h2 className="text-xl font-semibold mb-4 text-blue-300">Evidence Details</h2>
+          <div className="space-y-4">
+            <input
+              type="text"
+              name="location"
+              placeholder="Location"
+              value={evidenceDetails.location}
+              onChange={handleEvidenceFormChange}
+              className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+            />
+            <input
+              type="text"
+              name="gps"
+              placeholder="GPS Coordinates"
+              value={evidenceDetails.gps}
+              onChange={handleEvidenceFormChange}
+              className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+            />
+            <input
+              type="datetime-local"
+              name="timestamp"
+              value={evidenceDetails.timestamp}
+              onChange={handleEvidenceFormChange}
+              className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+            />
+            <input
+              type="text"
+              name="retriever"
+              placeholder="Retriever"
+              value={evidenceDetails.retriever}
+              onChange={handleEvidenceFormChange}
+              className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+            />
+            <input
+              type="text"
+              name="handler"
+              placeholder="Handler"
+              value={evidenceDetails.handler}
+              onChange={handleEvidenceFormChange}
+              className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+            />
+            <input
+              type="text"
+              name="device_type"
+              placeholder="Device Type"
+              value={evidenceDetails.device_type}
+              onChange={handleEvidenceFormChange}
+              className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+            />
+            <select
+              name="status"
+              value={evidenceDetails.status}
+              onChange={handleEvidenceFormChange}
+              className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+            >
+              <option value="Stored">Stored</option>
+              <option value="Collected">Collected</option>
+              <option value="Analyzed">Analyzed</option>
+              <option value="Archived">Archived</option>
+            </select>
+            <button
+              onClick={handleEvidenceFormSubmit}
+              className={`w-full ${isLoading ? 'bg-gray-500' : 'bg-blue-500 hover:bg-blue-600'} text-white py-2 rounded transition`}
+              disabled={isLoading}
+            >
+              {isLoading ? 'Processing...' : 'Submit Evidence and Upload'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Search Bar */}
       <div className="w-full max-w-lg mt-6">

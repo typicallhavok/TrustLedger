@@ -94,23 +94,33 @@ const logAccess = (
   return logEntry;
 };
 
-export const addBlockchainEvidence = async (fileData, userEmail, cid) => {
+// lib/ipfs.ts
+interface EvidenceDetails {
+  location: string;
+  gps: string;
+  timestamp: string;
+  retriever: string;
+  handler: string;
+  device_type: string;
+  status: string;
+}
+
+export const addBlockchainEvidence = async (fileData: File, userEmail: string | undefined, cid: string, evidenceDetails: EvidenceDetails) => {
     try {
-      const timestamp = new Date().toISOString();
       const response = await fetch('http://127.0.0.1:3000/evidence', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          timestamp: timestamp,
-          id: `EVID-${Date.now()}`,
+          timestamp: evidenceDetails.timestamp || new Date().toISOString(),
+          id: cid,
           hash: cid,
-          retriever: userEmail,
-          handler: userEmail,
-          location: "Digital Storage",
-          device_type: "IPFS",
-          status: "Stored"
+          retriever: evidenceDetails.retriever || userEmail,
+          handler: evidenceDetails.handler || userEmail,
+          location: evidenceDetails.location || "Digital Storage",
+          device_type: evidenceDetails.device_type || "IPFS",
+          status: evidenceDetails.status || "Stored"
         }),
       });
 
