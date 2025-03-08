@@ -56,15 +56,15 @@ const getMimeType = (fileName: string): string => {
     'tar': 'application/x-tar',
     'gz': 'application/gzip',
   };
-  
+
   return mimeTypes[extension] || 'application/octet-stream';
 };
 
 // Enhanced logging function with user tracking
 const logAccess = (
-  fileName: string, 
-  action: string, 
-  status: "success" | "error", 
+  fileName: string,
+  action: string,
+  status: "success" | "error",
   options: {
     cid?: string;
     fileSize?: number;
@@ -76,7 +76,7 @@ const logAccess = (
 ) => {
   // Get browser information
   const userAgent = typeof window !== 'undefined' ? window.navigator.userAgent : 'Server';
-  
+
   const logEntry: AccessLog = {
     fileName,
     timestamp: new Date().toISOString(),
@@ -85,13 +85,44 @@ const logAccess = (
     userAgent,
     ...options
   };
-  
+
   accessLogs.push(logEntry);
-  
+
   // For debugging - log to console as well
   console.log(`[${logEntry.timestamp}] ${action.toUpperCase()} ${fileName} - ${status} - User: ${options.userEmail || 'Unknown'}`);
-  
+
   return logEntry;
+};
+
+export const addBlockchainEvidence = async (fileData, userEmail, cid) => {
+    try {
+      const timestamp = new Date().toISOString();
+      const response = await fetch('http://127.0.0.1:3000/evidence', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          timestamp: timestamp,
+          id: `EVID-${Date.now()}`,
+          hash: cid,
+          retriever: userEmail,
+          handler: userEmail,
+          location: "Digital Storage",
+          device_type: "IPFS",
+          status: "Stored"
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Blockchain API error: ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error("Error adding blockchain evidence:", error);
+      throw error;
+    }
 };
 
 // Add this function to ipfs.ts
@@ -99,10 +130,10 @@ export const createDirectory = async (dirPath: string, userEmail?: string): Prom
   try {
     // Make sure the path starts with a slash
     const normalizedPath = dirPath.startsWith('/') ? dirPath : `/${dirPath}`;
-    
+
     // Create directory with parents option to create any missing parent directories
     await client.files.mkdir(normalizedPath, { parents: true });
-    
+
     // Log successful directory creation
     logAccess(dirPath, "directory_created", "success", {
       userEmail
@@ -114,7 +145,7 @@ export const createDirectory = async (dirPath: string, userEmail?: string): Prom
       errorDetails: errorMessage,
       userEmail
     });
-    
+
     console.error("Error creating directory:", error);
     throw error;
   }
@@ -145,14 +176,14 @@ export const uploadFile = async (file: File, userEmail?: string, caseId?: string
 
     // Define the correct path
     const uploadPath = caseId ? `/my-files/${caseId}/${file.name}` : `/my-files/${file.name}`;
-    
+
     const buffer = await file.arrayBuffer();
     const fileSize = buffer.byteLength;
     const mimeType = getMimeType(file.name);
-    
+
     const added = await client.add(buffer);
     const cid = added.cid.toString();
-    
+
     // Use the correct path here
     await client.files.cp(`/ipfs/${cid}`, uploadPath);
 
@@ -164,7 +195,7 @@ export const uploadFile = async (file: File, userEmail?: string, caseId?: string
       mimeType,
       userEmail
     });
-    
+
     return cid;
   } catch (error) {
     // Log failed upload with user email
@@ -173,7 +204,7 @@ export const uploadFile = async (file: File, userEmail?: string, caseId?: string
       errorDetails: errorMessage,
       userEmail
     });
-    
+
     console.error("Error uploading file:", error);
     throw error;
   }
@@ -183,41 +214,41 @@ export const uploadFile = async (file: File, userEmail?: string, caseId?: string
 export const listFiles = async (caseId?: string | null, userEmail?: string): Promise<{ name: string; cid: string; size?: number; type?: string }[]> => {
   try {
     await ensureDirectory();
-    
+
     // Define the path based on caseId
     const listPath = caseId ? `/my-files/${caseId}` : `/my-files`;
-    
+
     const files = [];
-    
+
     // Create the directory if it doesn't exist (especially for case directories)
     try {
       await client.files.stat(listPath);
     } catch (error) {
       if (caseId) {
         await client.files.mkdir(listPath, { parents: true });
-        
+
         // Log directory creation
         logAccess(listPath, "directory_created", "success", { userEmail });
       }
     }
-    
+
     // List only files in the specified path
     for await (const file of client.files.ls(listPath)) {
       // Skip subdirectories if we're viewing a case folder
       if (caseId && file.type === 'directory') {
         continue;
       }
-      
+
       try {
         const stat = await client.files.stat(`${listPath}/${file.name}`);
-        
+
         // Only add if it's a file or if we're at the root without a caseId
         if (stat.type === 'file' || (!caseId && stat.type === 'directory')) {
           const fileSize = stat.size;
           const mimeType = getMimeType(file.name);
-          
-          files.push({ 
-            name: file.name, 
+
+          files.push({
+            name: file.name,
             cid: file.cid.toString(),
             size: fileSize,
             type: mimeType
@@ -227,25 +258,25 @@ export const listFiles = async (caseId?: string | null, userEmail?: string): Pro
         files.push({ name: file.name, cid: file.cid.toString() });
       }
     }
-    
+
     // Log successful listing with user email
     logAccess(listPath, "list_files", "success", {
       fileSize: files.length,
       userEmail
     });
-    
+
     return files;
   } catch (error) {
     // Define the path for error logging
     const listPath = caseId ? `/my-files/${caseId}` : `/my-files`;
-    
+
     // Log failed listing with user email
     const errorMessage = error instanceof Error ? error.message : String(error);
     logAccess(listPath, "list_files", "error", {
       errorDetails: errorMessage,
       userEmail
     });
-    
+
     console.error("Error listing files:", error);
     throw error;
   }
@@ -257,7 +288,7 @@ export const getFileStats = async (fileName: string, caseId?: string | null): Pr
     const filePath = caseId ? `/my-files/${caseId}/${fileName}` : `/my-files/${fileName}`;
     const stat = await client.files.stat(filePath);
     const mimeType = getMimeType(fileName);
-    
+
     return {
       cid: stat.cid.toString(),
       size: stat.size,
@@ -273,17 +304,17 @@ export const getFileStats = async (fileName: string, caseId?: string | null): Pr
 export const getFileContent = async (fileName: string, userEmail?: string, caseId?: string | null): Promise<Blob | null> => {
   try {
     const filePath = caseId ? `/my-files/${caseId}/${fileName}` : `/my-files/${fileName}`;
-    
+
     // Get file stats
     const stat = await client.files.stat(filePath);
     const mimeType = getMimeType(fileName);
-    
+
     const stats = {
       cid: stat.cid.toString(),
       size: stat.size,
       type: mimeType
     };
-    
+
     const chunks: Uint8Array[] = [];
     for await (const chunk of client.files.read(filePath)) {
       chunks.push(chunk);
@@ -298,14 +329,14 @@ export const getFileContent = async (fileName: string, userEmail?: string, caseI
     for (const chunk of chunks) {
       totalLength += chunk.length;
     }
-    
+
     const combinedChunks = new Uint8Array(totalLength);
     let offset = 0;
     for (const chunk of chunks) {
       combinedChunks.set(chunk, offset);
       offset += chunk.length;
     }
-    
+
     // Log successful retrieval with user email
     logAccess(fileName, "retrieved", "success", {
       cid: stats.cid,
@@ -314,7 +345,7 @@ export const getFileContent = async (fileName: string, userEmail?: string, caseI
       mimeType: stats.type,
       userEmail
     });
-    
+
     return new Blob([combinedChunks], { type: stats.type });
   } catch (error) {
     // Log failed retrieval with user email
@@ -323,7 +354,7 @@ export const getFileContent = async (fileName: string, userEmail?: string, caseI
       errorDetails: errorMessage,
       userEmail
     });
-    
+
     console.error("Error retrieving file:", error);
     return null;
   }
@@ -340,7 +371,7 @@ export const viewFile = async (fileName: string, userEmail?: string, caseId?: st
     const filePath = caseId ? `/my-files/${caseId}/${fileName}` : `/my-files/${fileName}`;
     const stat = await client.files.stat(filePath);
     const mimeType = getMimeType(fileName);
-    
+
     const stats = {
       cid: stat.cid.toString(),
       size: stat.size,
@@ -348,7 +379,7 @@ export const viewFile = async (fileName: string, userEmail?: string, caseId?: st
     };
 
     const url = URL.createObjectURL(blob);
-    
+
     // Log successful view with user email
     logAccess(fileName, "viewed", "success", {
       cid: stats.cid,
@@ -357,7 +388,7 @@ export const viewFile = async (fileName: string, userEmail?: string, caseId?: st
       mimeType: stats.type,
       userEmail
     });
-    
+
     return url;
   } catch (error) {
     // Log failed view with user email
@@ -366,7 +397,7 @@ export const viewFile = async (fileName: string, userEmail?: string, caseId?: st
       errorDetails: errorMessage,
       userEmail
     });
-    
+
     console.error("Error viewing file:", error);
     return null;
   }

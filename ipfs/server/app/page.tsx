@@ -1,9 +1,10 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { uploadFile, listFiles, getFileContent, getAccessLogs, viewFile, getFileAccessLogs, clearLogs, exportLogsAsJson } from "../lib/ipfs";
+import { uploadFile, listFiles, getFileContent, getAccessLogs, viewFile, getFileAccessLogs, clearLogs, exportLogsAsJson, addBlockchainEvidence } from "../lib/ipfs";
 import LoginPage from "./login/page";
 import ActivityTimeline from "../components/activity-timeline";
+
 
 export default function Home() {
   const router = useRouter();
@@ -30,12 +31,12 @@ export default function Home() {
         router.push("/login");
       } else {
         setUser(JSON.parse(currentUser));
-        
+
         // Extract caseId from URL
         const urlParams = new URLSearchParams(window.location.search);
         const caseId = urlParams.get('caseId');
         setCurrentCaseId(caseId);
-        
+
         // Moved loadFiles() to the separate useEffect below
         if (JSON.parse(currentUser).isAdmin) {
           loadAccessLogs();
@@ -43,13 +44,14 @@ export default function Home() {
       }
     }
   }, [router]);
-  
+
   // Add a separate useEffect that depends on currentCaseId
   useEffect(() => {
     if (user) {
       loadFiles();
     }
   }, [currentCaseId, user]);
+
 
   const loadFiles = async () => {
     setIsLoading(true);
@@ -65,7 +67,7 @@ export default function Home() {
 
   const loadAccessLogs = async () => {
     if (!user?.isAdmin) return;
-    
+
     try {
       const logs = await getAccessLogs();
       // If logs don't have userEmail property, add it
@@ -88,7 +90,7 @@ export default function Home() {
     setSearchTerm(e.target.value);
   };
 
-  const filteredFiles = files.filter(file => 
+  const filteredFiles = files.filter(file =>
     file.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -98,13 +100,33 @@ export default function Home() {
     }
   };
 
+  const [evidenceDetails, setEvidenceDetails] = useState({
+    location: "",
+    gps: "",
+    timestamp: new Date().toISOString().slice(0, 16),
+    retriever: "",
+    handler: "",
+    device_type: "",
+    status: "Stored"
+  });
+
+  const [showEvidenceForm, setShowEvidenceForm] = useState(false);
   const handleUpload = async () => {
     if (!file) return alert("Please select a file first!");
     setIsLoading(true);
     try {
       // Pass user email and caseId to uploadFile function
       const cid = await uploadFile(file, user?.email, currentCaseId);
-      alert(`File uploaded successfully! CID: ${cid}`);
+
+      // Add blockchain evidence after successful IPFS upload
+      try {
+        await addBlockchainEvidence(file, user?.email, cid);
+        alert(`File uploaded successfully and recorded on blockchain! CID: ${cid}`);
+      } catch (blockchainError) {
+        console.error("Blockchain recording failed:", blockchainError);
+        alert(`File uploaded to IPFS successfully (CID: ${cid}), but blockchain recording failed: ${blockchainError}`);
+      }
+
       await loadFiles();
       if (user?.isAdmin) {
         await loadAccessLogs();
@@ -165,10 +187,10 @@ export default function Home() {
       }
 
       setViewURL(url);
-      
+
       // Open the file in a new tab
       window.open(url, '_blank');
-      
+
       if (user?.isAdmin) {
         await loadAccessLogs();
       }
@@ -206,7 +228,7 @@ export default function Home() {
       alert("You don't have permission to view logs");
       return;
     }
-    
+
     setIsLoading(true);
     try {
       await loadAccessLogs();
@@ -220,13 +242,13 @@ export default function Home() {
       setIsLoading(false);
     }
   };
-  
+
   const handleViewTimeline = async () => {
     if (!user?.isAdmin) {
       alert("You don't have permission to view activity timeline");
       return;
     }
-    
+
     setIsLoading(true);
     try {
       await loadAccessLogs();
@@ -246,19 +268,19 @@ export default function Home() {
       alert("You don't have permission to export logs");
       return;
     }
-    
+
     try {
       const jsonData = exportLogsAsJson();
       const blob = new Blob([jsonData], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
-      
+
       const a = document.createElement('a');
       a.href = url;
       a.download = 'ipfs-access-logs.json';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      
+
       alert("Logs exported successfully!");
     } catch (error) {
       console.error("Export failed:", error);
@@ -272,7 +294,7 @@ export default function Home() {
 
   const formatFileSize = (size?: number) => {
     if (!size) return 'Unknown';
-    
+
     if (size < 1024) return `${size} B`;
     if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`;
     if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(2)} MB`;
@@ -313,7 +335,7 @@ export default function Home() {
             <span className="text-white">{user.email}</span>
             {user.isAdmin && <span className="ml-2 bg-purple-600 px-2 py-1 rounded text-xs">Admin</span>}
           </div>
-          <button 
+          <button
             onClick={handleLogout}
             className="bg-red-600 px-3 py-1 rounded text-sm hover:bg-red-700"
           >
@@ -326,15 +348,15 @@ export default function Home() {
       {user.isAdmin && (
         <div className="w-full max-w-lg flex flex-wrap justify-between mb-6 gap-2">
           <div className="flex space-x-2">
-            <button 
-              onClick={handleViewAllLogs} 
+            <button
+              onClick={handleViewAllLogs}
               className="bg-purple-600 px-4 py-2 rounded hover:bg-purple-700 transition"
               disabled={isLoading}
             >
               View All Logs
             </button>
-            <button 
-              onClick={handleViewTimeline} 
+            <button
+              onClick={handleViewTimeline}
               className="bg-indigo-600 px-4 py-2 rounded hover:bg-indigo-700 transition"
               disabled={isLoading}
             >
@@ -342,8 +364,8 @@ export default function Home() {
             </button>
           </div>
           <div className="flex space-x-2">
-            <button 
-              onClick={handleExportLogs} 
+            <button
+              onClick={handleExportLogs}
               className="bg-blue-600 px-4 py-2 rounded hover:bg-blue-700 transition"
               disabled={isLoading}
             >
@@ -356,14 +378,14 @@ export default function Home() {
       {/* Upload Section */}
       <div className="w-full max-w-lg bg-gray-800 p-6 rounded-lg shadow-lg">
         <h2 className="text-xl font-semibold mb-4 text-blue-300">Upload File</h2>
-        <input 
-          type="file" 
-          onChange={handleFileChange} 
+        <input
+          type="file"
+          onChange={handleFileChange}
           className="w-full border border-gray-600 bg-gray-700 p-2 rounded mb-4"
           disabled={isLoading}
         />
-        <button 
-          onClick={handleUpload} 
+        <button
+          onClick={handleUpload}
           className={`w-full ${isLoading ? 'bg-gray-500' : 'bg-blue-500 hover:bg-blue-600'} text-white py-2 rounded transition`}
           disabled={isLoading || !file}
         >
@@ -386,15 +408,15 @@ export default function Home() {
       <div className="w-full max-w-lg bg-gray-800 p-6 mt-6 rounded-lg shadow-lg">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold text-green-300">Stored Files</h2>
-          <button 
-            onClick={loadFiles} 
+          <button
+            onClick={loadFiles}
             className="bg-green-600 px-3 py-1 rounded text-sm"
             disabled={isLoading}
           >
             Refresh
           </button>
         </div>
-        
+
         {isLoading ? (
           <div className="text-center py-4">
             <p className="text-gray-400">Loading...</p>
@@ -418,26 +440,26 @@ export default function Home() {
                   CID: {file.cid}
                 </div>
                 <div className="flex mt-2 space-x-2">
-                  <button 
-                    onClick={() => handleView(file.name)} 
+                  <button
+                    onClick={() => handleView(file.name)}
                     className="bg-yellow-500 px-3 py-1 rounded text-sm flex-1"
                     disabled={isLoading}
                   >
                     View
                   </button>
-                  
+
                   {/* Only show these buttons for admin users */}
                   {user.isAdmin && (
                     <>
-                      <button 
-                        onClick={() => handleRetrieve(file.name)} 
+                      <button
+                        onClick={() => handleRetrieve(file.name)}
                         className="bg-green-500 px-3 py-1 rounded text-sm flex-1"
                         disabled={isLoading}
                       >
                         Download
                       </button>
-                      <button 
-                        onClick={() => handleViewLogs(file.name, file.cid)} 
+                      <button
+                        onClick={() => handleViewLogs(file.name, file.cid)}
                         className="bg-blue-500 px-3 py-1 rounded text-sm flex-1"
                         disabled={isLoading}
                       >
@@ -451,14 +473,14 @@ export default function Home() {
           </ul>
         )}
       </div>
-      
+
       {/* Activity Timeline Section - Only visible to admin */}
       {user.isAdmin && isViewingTimeline && (
         <div className="w-full mt-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold text-indigo-300">Activity Timeline</h2>
-            <button 
-              onClick={() => setIsViewingTimeline(false)} 
+            <button
+              onClick={() => setIsViewingTimeline(false)}
               className="bg-gray-600 px-3 py-1 rounded"
             >
               Close
@@ -473,8 +495,8 @@ export default function Home() {
         <div className="w-full max-w-lg bg-gray-800 p-6 mt-6 rounded-lg shadow-lg">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold text-purple-300">Access Logs for: {currentFileForLogs}</h2>
-            <button 
-              onClick={() => setIsViewingFileLogs(false)} 
+            <button
+              onClick={() => setIsViewingFileLogs(false)}
               className="bg-gray-600 px-3 py-1 rounded"
             >
               Close
@@ -532,8 +554,8 @@ export default function Home() {
         <div className="w-full max-w-lg bg-gray-800 p-6 mt-6 rounded-lg shadow-lg">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold text-purple-300">All System Logs</h2>
-            <button 
-              onClick={() => setIsViewingAllLogs(false)} 
+            <button
+              onClick={() => setIsViewingAllLogs(false)}
               className="bg-gray-600 px-3 py-1 rounded"
             >
               Close
