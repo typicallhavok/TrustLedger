@@ -20,9 +20,8 @@ export default function Home() {
   const [isViewingTimeline, setIsViewingTimeline] = useState<boolean>(false);
   const [currentFileForLogs, setCurrentFileForLogs] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [searchTerm, setSearchTerm] = useState<string>("");
   const [currentCaseId, setCurrentCaseId] = useState<string | null>(null);
-  const [showEvidenceForm, setShowEvidenceForm] = useState<boolean>(false);
+  const [showUploadForm, setShowUploadForm] = useState<boolean>(false);
   const [evidenceDetails, setEvidenceDetails] = useState({
     location: "",
     gps: "",
@@ -46,6 +45,20 @@ export default function Home() {
         const caseId = urlParams.get('caseId');
         setCurrentCaseId(caseId);
 
+        // Check for returned camera photo
+        const cameraPhoto = localStorage.getItem("cameraPhoto");
+        if (cameraPhoto) {
+          handleCameraPhotoReturn(cameraPhoto);
+          localStorage.removeItem("cameraPhoto");
+        }
+
+        // Check for returned video
+        const videoData = localStorage.getItem("videoData");
+        if (videoData) {
+          handleVideoReturn(videoData);
+          localStorage.removeItem("videoData");
+        }
+
         // Moved loadFiles() to the separate useEffect below
         if (JSON.parse(currentUser).isAdmin) {
           loadAccessLogs();
@@ -60,6 +73,44 @@ export default function Home() {
       loadFiles();
     }
   }, [currentCaseId, user]);
+
+  const handleCameraPhotoReturn = async (photoDataUrl: string) => {
+    try {
+      // Convert base64 to file
+      const response = await fetch(photoDataUrl);
+      const blob = await response.blob();
+      const newFile = new File([blob], `photo_${Date.now()}.png`, { type: "image/png" });
+      
+      // Set the file in the state
+      setFile(newFile);
+      
+      // Show the upload form if it's not already visible
+      if (!showUploadForm) {
+        setShowUploadForm(true);
+      }
+    } catch (error) {
+      console.error("Error processing camera photo:", error);
+    }
+  };
+
+  const handleVideoReturn = async (videoDataUrl: string) => {
+    try {
+      // Convert blob URL to file
+      const response = await fetch(videoDataUrl);
+      const blob = await response.blob();
+      const newFile = new File([blob], `video_${Date.now()}.mp4`, { type: "video/mp4" });
+      
+      // Set the file in the state
+      setFile(newFile);
+      
+      // Show the upload form if it's not already visible
+      if (!showUploadForm) {
+        setShowUploadForm(true);
+      }
+    } catch (error) {
+      console.error("Error processing video:", error);
+    }
+  };
 
   const loadFiles = async () => {
     setIsLoading(true);
@@ -94,14 +145,6 @@ export default function Home() {
     router.push("/login");
   };
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(e.target.value);
-  };
-
-  const filteredFiles = files.filter(file =>
-    file.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
       setFile(event.target.files[0]);
@@ -116,12 +159,19 @@ export default function Home() {
     }));
   };
 
-  const handleUpload = async () => {
-    if (!file) return alert("Please select a file first!");
-    setShowEvidenceForm(true);
+  const handleOpenCamera = () => {
+    // Preserve case ID in the URL when navigating to camera page
+    const caseIdParam = currentCaseId ? `?caseId=${currentCaseId}` : '';
+    router.push(`/camera${caseIdParam}`);
   };
 
-  const handleEvidenceFormSubmit = async () => {
+  const handleOpenVideo = () => {
+    // Preserve case ID in the URL when navigating to video page
+    const caseIdParam = currentCaseId ? `?caseId=${currentCaseId}` : '';
+    router.push(`/video${caseIdParam}`);
+  };
+
+  const handleUpload = async () => {
     if (!file) {
       alert("Please select a file first!");
       return;
@@ -149,7 +199,7 @@ export default function Home() {
       // Reset the file input
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
-      setShowEvidenceForm(false);
+      setShowUploadForm(false);
     } catch (error) {
       console.error("Upload failed:", error);
       alert(`Upload failed: ${error}`);
@@ -341,368 +391,387 @@ export default function Home() {
   if (!user) return <LoginPage />;
 
   return (
-    <div className="flex flex-col items-center p-6 min-h-screen bg-gray-900 text-white">
-      <div className="w-full max-w-lg flex justify-between items-center mb-6">
-        <h1 className="text-4xl font-bold text-blue-400">IPFS File Storage</h1>
-        <div className="flex flex-col items-end">
-          <div className="mb-2 text-sm">
-            <span className="text-gray-400">Logged in as: </span>
-            <span className="text-white">{user.email}</span>
-            {user.isAdmin && <span className="ml-2 bg-purple-600 px-2 py-1 rounded text-xs">Admin</span>}
-          </div>
-          <button
-            onClick={handleLogout}
-            className="bg-red-600 px-3 py-1 rounded text-sm hover:bg-red-700"
-          >
-            Logout
-          </button>
-        </div>
-      </div>
-
-      {/* Admin Actions */}
-      {user.isAdmin && (
-        <div className="w-full max-w-lg flex flex-wrap justify-between mb-6 gap-2">
-          <div className="flex space-x-2">
-            <button
-              onClick={handleViewAllLogs}
-              className="bg-purple-600 px-4 py-2 rounded hover:bg-purple-700 transition"
-              disabled={isLoading}
-            >
-              View All Logs
-            </button>
-            <button
-              onClick={handleViewTimeline}
-              className="bg-indigo-600 px-4 py-2 rounded hover:bg-indigo-700 transition"
-              disabled={isLoading}
-            >
-              Activity Timeline
-            </button>
-          </div>
-          <div className="flex space-x-2">
-            <button
-              onClick={handleExportLogs}
-              className="bg-blue-600 px-4 py-2 rounded hover:bg-blue-700 transition"
-              disabled={isLoading}
-            >
-              Export Logs
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Upload Section */}
-      <div className="w-full max-w-lg bg-gray-800 p-6 rounded-lg shadow-lg">
-        <h2 className="text-xl font-semibold mb-4 text-blue-300">Upload File</h2>
-        <input
-          type="file"
-          onChange={handleFileChange}
-          className="w-full border border-gray-600 bg-gray-700 p-2 rounded mb-4"
-          disabled={isLoading}
-        />
+    <div className="flex flex-col h-screen bg-gray-900 text-white">
+      {/* Header with title and logout button */}
+      <header className="bg-gray-800 p-4 flex justify-between items-center shadow-md">
+        <h1 className="text-3xl font-bold text-blue-400">IPFS File Storage</h1>
         <button
-          onClick={handleUpload}
-          className={`w-full ${isLoading ? 'bg-gray-500' : 'bg-blue-500 hover:bg-blue-600'} text-white py-2 rounded transition`}
-          disabled={isLoading || !file}
+          onClick={handleLogout}
+          className="bg-red-600 px-3 py-1 rounded hover:bg-red-700"
         >
-          {isLoading ? 'Processing...' : 'Upload to IPFS'}
+          Logout
         </button>
-      </div>
+      </header>
 
-      {/* Evidence Form */}
-      {showEvidenceForm && (
-        <div className="w-full max-w-lg bg-gray-800 p-6 mt-6 rounded-lg shadow-lg">
-          <h2 className="text-xl font-semibold mb-4 text-blue-300">Evidence Details</h2>
-          <div className="space-y-4">
-            <input
-              type="text"
-              name="location"
-              placeholder="Location"
-              value={evidenceDetails.location}
-              onChange={handleEvidenceFormChange}
-              className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
-            />
-            <input
-              type="text"
-              name="gps"
-              placeholder="GPS Coordinates"
-              value={evidenceDetails.gps}
-              onChange={handleEvidenceFormChange}
-              className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
-            />
-            <input
-              type="datetime-local"
-              name="timestamp"
-              value={evidenceDetails.timestamp}
-              onChange={handleEvidenceFormChange}
-              className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
-            />
-            <input
-              type="text"
-              name="retriever"
-              placeholder="Retriever"
-              value={evidenceDetails.retriever}
-              onChange={handleEvidenceFormChange}
-              className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
-            />
-            <input
-              type="text"
-              name="handler"
-              placeholder="Handler"
-              value={evidenceDetails.handler}
-              onChange={handleEvidenceFormChange}
-              className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
-            />
-            <input
-              type="text"
-              name="device_type"
-              placeholder="Device Type"
-              value={evidenceDetails.device_type}
-              onChange={handleEvidenceFormChange}
-              className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
-            />
-            <select
-              name="status"
-              value={evidenceDetails.status}
-              onChange={handleEvidenceFormChange}
-              className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
-            >
-              <option value="Stored">Stored</option>
-              <option value="Collected">Collected</option>
-              <option value="Analyzed">Analyzed</option>
-              <option value="Archived">Archived</option>
-            </select>
-            <button
-              onClick={handleEvidenceFormSubmit}
-              className={`w-full ${isLoading ? 'bg-gray-500' : 'bg-blue-500 hover:bg-blue-600'} text-white py-2 rounded transition`}
-              disabled={isLoading}
-            >
-              {isLoading ? 'Processing...' : 'Submit Evidence and Upload'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Search Bar */}
-      <div className="w-full max-w-lg mt-6">
-        <input
-          type="text"
-          placeholder="Search files..."
-          value={searchTerm}
-          onChange={handleSearchChange}
-          className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
-        />
-      </div>
-
-      {/* Stored Files Section */}
-      <div className="w-full max-w-lg bg-gray-800 p-6 mt-6 rounded-lg shadow-lg">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-green-300">Stored Files</h2>
+      {/* Admin Actions Bar */}
+      {user.isAdmin && (
+        <div className="bg-gray-800 border-t border-gray-700 px-4 py-2 flex justify-center space-x-4">
           <button
-            onClick={loadFiles}
-            className="bg-green-600 px-3 py-1 rounded text-sm"
+            onClick={handleViewAllLogs}
+            className="bg-purple-600 px-4 py-1 rounded hover:bg-purple-700 transition"
             disabled={isLoading}
           >
-            Refresh
+            View All Logs
+          </button>
+          <button
+            onClick={handleViewTimeline}
+            className="bg-indigo-600 px-4 py-1 rounded hover:bg-indigo-700 transition"
+            disabled={isLoading}
+          >
+            Activity Timeline
+          </button>
+          <button
+            onClick={handleExportLogs}
+            className="bg-blue-600 px-4 py-1 rounded hover:bg-blue-700 transition"
+            disabled={isLoading}
+          >
+            Export Logs
           </button>
         </div>
+      )}
 
-        {isLoading ? (
-          <div className="text-center py-4">
-            <p className="text-gray-400">Loading...</p>
+      {/* Main content area */}
+      <main className="flex-1 p-6 overflow-auto">
+        {/* Stored Files Section at the top */}
+        <div className="bg-gray-800 p-6 rounded-lg shadow-lg mb-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-green-300">Stored Files</h2>
+            <button
+              onClick={loadFiles}
+              className="bg-green-600 px-3 py-1 rounded text-sm hover:bg-green-700"
+              disabled={isLoading}
+            >
+              Refresh
+            </button>
           </div>
-        ) : filteredFiles.length === 0 ? (
-          <p className="text-gray-400">
-            {files.length === 0 ? "No files uploaded yet." : "No files match your search."}
-          </p>
-        ) : (
-          <ul>
-            {filteredFiles.map((file) => (
-              <li key={file.cid} className="flex flex-col p-3 border border-gray-700 rounded mb-2 bg-gray-700">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-300">{file.name}</span>
-                  <div className="flex space-x-2 text-xs text-gray-400">
-                    {file.size && <span>{formatFileSize(file.size)}</span>}
-                    {file.type && <span>{file.type}</span>}
+
+          {isLoading ? (
+            <div className="text-center py-4">
+              <p className="text-gray-400">Loading...</p>
+            </div>
+          ) : files.length === 0 ? (
+            <p className="text-gray-400">No files uploaded yet.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {files.map((file) => (
+                <div key={file.cid} className="flex flex-col p-4 border border-gray-700 rounded bg-gray-700 hover:bg-gray-600 transition">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-gray-300 font-medium truncate">{file.name}</span>
+                    <div className="flex space-x-2 text-xs text-gray-400">
+                      {file.size && <span>{formatFileSize(file.size)}</span>}
+                    </div>
+                  </div>
+                  <div className="text-xs text-gray-400 truncate mb-3">
+                    <span className="text-gray-500">CID: </span>{file.cid}
+                  </div>
+                  <div className="flex mt-auto space-x-2">
+                    <button
+                      onClick={() => handleView(file.name)}
+                      className="bg-yellow-500 px-3 py-1 rounded text-sm flex-1 hover:bg-yellow-600"
+                      disabled={isLoading}
+                    >
+                      View
+                    </button>
+
+                    {/* Only show these buttons for admin users */}
+                    {user.isAdmin && (
+                      <>
+                        <button
+                          onClick={() => handleRetrieve(file.name)}
+                          className="bg-green-500 px-3 py-1 rounded text-sm flex-1 hover:bg-green-600"
+                          disabled={isLoading}
+                        >
+                          Download
+                        </button>
+                        <button
+                          onClick={() => handleViewLogs(file.name, file.cid)}
+                          className="bg-blue-500 px-3 py-1 rounded text-sm flex-1 hover:bg-blue-600"
+                          disabled={isLoading}
+                        >
+                          Logs
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
-                <div className="text-xs text-gray-400 truncate mt-1">
-                  CID: {file.cid}
-                </div>
-                <div className="flex mt-2 space-x-2">
-                  <button
-                    onClick={() => handleView(file.name)}
-                    className="bg-yellow-500 px-3 py-1 rounded text-sm flex-1"
-                    disabled={isLoading}
-                  >
-                    View
-                  </button>
+              ))}
+            </div>
+          )}
+        </div>
 
-                  {/* Only show these buttons for admin users */}
-                  {user.isAdmin && (
-                    <>
-                      <button
-                        onClick={() => handleRetrieve(file.name)}
-                        className="bg-green-500 px-3 py-1 rounded text-sm flex-1"
-                        disabled={isLoading}
-                      >
-                        Download
-                      </button>
-                      <button
-                        onClick={() => handleViewLogs(file.name, file.cid)}
-                        className="bg-blue-500 px-3 py-1 rounded text-sm flex-1"
-                        disabled={isLoading}
-                      >
-                        Logs
-                      </button>
-                    </>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+        {/* Activity Timeline Section - Only visible to admin */}
+        {user.isAdmin && isViewingTimeline && (
+          <div className="bg-gray-800 p-6 rounded-lg shadow-lg mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-indigo-300">Activity Timeline</h2>
+              <button
+                onClick={() => setIsViewingTimeline(false)}
+                className="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded"
+              >
+                Close
+              </button>
+            </div>
+            <ActivityTimeline logs={accessLogs} />
+          </div>
         )}
-      </div>
 
-      {/* Activity Timeline Section - Only visible to admin */}
-      {user.isAdmin && isViewingTimeline && (
-        <div className="w-full mt-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-indigo-300">Activity Timeline</h2>
-            <button
-              onClick={() => setIsViewingTimeline(false)}
-              className="bg-gray-600 px-3 py-1 rounded"
-            >
-              Close
-            </button>
-          </div>
-          <ActivityTimeline logs={accessLogs} />
-        </div>
-      )}
-
-      {/* File-specific Access Logs Section - Only visible to admin */}
-      {user.isAdmin && isViewingFileLogs && (
-        <div className="w-full max-w-lg bg-gray-800 p-6 mt-6 rounded-lg shadow-lg">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-purple-300">Access Logs for: {currentFileForLogs}</h2>
-            <button
-              onClick={() => setIsViewingFileLogs(false)}
-              className="bg-gray-600 px-3 py-1 rounded"
-            >
-              Close
-            </button>
-          </div>
-          {selectedFileAccessLogs.length === 0 ? (
-            <p className="text-gray-400">No access logs for this file.</p>
-          ) : (
-            <div className="max-h-96 overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-700">
-                  <tr>
-                    <th className="text-left p-2">User</th>
-                    <th className="text-left p-2">Action</th>
-                    <th className="text-left p-2">Status</th>
-                    <th className="text-left p-2">Timestamp</th>
-                    <th className="text-left p-2">Details</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedFileAccessLogs.map((log, index) => (
-                    <tr key={index} className="border-t border-gray-700">
-                      <td className="p-2 text-xs">
-                        {log.userEmail || 'Unknown'}
-                      </td>
-                      <td className="p-2">
-                        <span className={`px-2 py-1 rounded text-xs ${getActionBadgeColor(log.action)}`}>
-                          {log.action}
-                        </span>
-                      </td>
-                      <td className="p-2">
-                        <span className={`px-2 py-1 rounded text-xs ${getStatusBadgeColor(log.status)}`}>
-                          {log.status}
-                        </span>
-                      </td>
-                      <td className="p-2">{formatTimestamp(log.timestamp)}</td>
-                      <td className="p-2">
-                        <div className="flex flex-col">
-                          {log.fileSize && <span className="text-xs">Size: {formatFileSize(log.fileSize)}</span>}
-                          {log.fileType && <span className="text-xs">Type: {log.fileType}</span>}
-                          {log.errorDetails && <span className="text-xs text-red-400">Error: {log.errorDetails}</span>}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {/* File-specific Access Logs Section - Only visible to admin */}
+        {user.isAdmin && isViewingFileLogs && (
+          <div className="bg-gray-800 p-6 rounded-lg shadow-lg mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-purple-300">Access Logs for: {currentFileForLogs}</h2>
+              <button
+                onClick={() => setIsViewingFileLogs(false)}
+                className="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded"
+              >
+                Close
+              </button>
             </div>
-          )}
-        </div>
-      )}
-
-      {/* All Access Logs Section - Only visible to admin */}
-      {user.isAdmin && isViewingAllLogs && (
-        <div className="w-full max-w-lg bg-gray-800 p-6 mt-6 rounded-lg shadow-lg">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-purple-300">All System Logs</h2>
-            <button
-              onClick={() => setIsViewingAllLogs(false)}
-              className="bg-gray-600 px-3 py-1 rounded"
-            >
-              Close
-            </button>
-          </div>
-          {accessLogs.length === 0 ? (
-            <p className="text-gray-400">No access logs recorded.</p>
-          ) : (
-            <div className="max-h-96 overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-700">
-                  <tr>
-                    <th className="text-left p-2">File</th>
-                    <th className="text-left p-2">User</th>
-                    <th className="text-left p-2">Action</th>
-                    <th className="text-left p-2">Status</th>
-                    <th className="text-left p-2">Timestamp</th>
-                    <th className="text-left p-2">Details</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {accessLogs.map((log, index) => (
-                    <tr key={index} className="border-t border-gray-700">
-                      <td className="p-2 truncate max-w-xs">{log.fileName}</td>
-                      <td className="p-2 text-xs">
-                        {log.userEmail || 'Unknown'}
-                      </td>
-                      <td className="p-2">
-                        <span className={`px-2 py-1 rounded text-xs ${getActionBadgeColor(log.action)}`}>
-                          {log.action}
-                        </span>
-                      </td>
-                      <td className="p-2">
-                        <span className={`px-2 py-1 rounded text-xs ${getStatusBadgeColor(log.status)}`}>
-                          {log.status}
-                        </span>
-                      </td>
-                      <td className="p-2">{formatTimestamp(log.timestamp)}</td>
-                      <td className="p-2">
-                        <details className="text-xs">
-                          <summary>View Details</summary>
-                          <div className="p-2 bg-gray-900 mt-1 rounded">
-                            {log.cid && <div>CID: {log.cid}</div>}
-                            {log.fileSize && <div>Size: {formatFileSize(log.fileSize)}</div>}
-                            {log.fileType && <div>Type: {log.fileType}</div>}
-                            {log.userAgent && <div>User Agent: {log.userAgent}</div>}
-                            {log.errorDetails && <div className="text-red-400">Error: {log.errorDetails}</div>}
+            {selectedFileAccessLogs.length === 0 ? (
+              <p className="text-gray-400">No access logs for this file.</p>
+            ) : (
+              <div className="max-h-96 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-700">
+                    <tr>
+                      <th className="text-left p-2">User</th>
+                      <th className="text-left p-2">Action</th>
+                      <th className="text-left p-2">Status</th>
+                      <th className="text-left p-2">Timestamp</th>
+                      <th className="text-left p-2">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedFileAccessLogs.map((log, index) => (
+                      <tr key={index} className="border-t border-gray-700">
+                        <td className="p-2 text-xs">
+                          {log.userEmail || 'Unknown'}
+                        </td>
+                        <td className="p-2">
+                          <span className={`px-2 py-1 rounded text-xs ${getActionBadgeColor(log.action)}`}>
+                            {log.action}
+                          </span>
+                        </td>
+                        <td className="p-2">
+                          <span className={`px-2 py-1 rounded text-xs ${getStatusBadgeColor(log.status)}`}>
+                            {log.status}
+                          </span>
+                        </td>
+                        <td className="p-2">{formatTimestamp(log.timestamp)}</td>
+                        <td className="p-2">
+                          <div className="flex flex-col">
+                            {log.fileSize && <span className="text-xs">Size: {formatFileSize(log.fileSize)}</span>}
+                            {log.fileType && <span className="text-xs">Type: {log.fileType}</span>}
+                            {log.errorDetails && <span className="text-xs text-red-400">Error: {log.errorDetails}</span>}
                           </div>
-                        </details>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* All Access Logs Section - Only visible to admin */}
+        {user.isAdmin && isViewingAllLogs && (
+          <div className="bg-gray-800 p-6 rounded-lg shadow-lg mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-purple-300">All System Logs</h2>
+              <button
+                onClick={() => setIsViewingAllLogs(false)}
+                className="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded"
+              >
+                Close
+              </button>
             </div>
-          )}
+            {accessLogs.length === 0 ? (
+              <p className="text-gray-400">No access logs recorded.</p>
+            ) : (
+              <div className="max-h-96 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-700">
+                    <tr>
+                      <th className="text-left p-2">File</th>
+                      <th className="text-left p-2">User</th>
+                      <th className="text-left p-2">Action</th>
+                      <th className="text-left p-2">Status</th>
+                      <th className="text-left p-2">Timestamp</th>
+                      <th className="text-left p-2">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {accessLogs.map((log, index) => (
+                      <tr key={index} className="border-t border-gray-700">
+                        <td className="p-2 truncate max-w-xs">{log.fileName}</td>
+                        <td className="p-2 text-xs">
+                          {log.userEmail || 'Unknown'}
+                        </td>
+                        <td className="p-2">
+                          <span className={`px-2 py-1 rounded text-xs ${getActionBadgeColor(log.action)}`}>
+                            {log.action}
+                          </span>
+                        </td>
+                        <td className="p-2">
+                          <span className={`px-2 py-1 rounded text-xs ${getStatusBadgeColor(log.status)}`}>
+                            {log.status}
+                          </span>
+                        </td>
+                        <td className="p-2">{formatTimestamp(log.timestamp)}</td>
+                        <td className="p-2">
+                          <details className="text-xs">
+                            <summary>View Details</summary>
+                            <div className="p-2 bg-gray-900 mt-1 rounded">
+                              {log.cid && <div>CID: {log.cid}</div>}
+                              {log.fileSize && <div>Size: {formatFileSize(log.fileSize)}</div>}
+                              {log.fileType && <div>Type: {log.fileType}</div>}
+                              {log.userAgent && <div>User Agent: {log.userAgent}</div>}
+                              {log.errorDetails && <div className="text-red-400">Error: {log.errorDetails}</div>}
+                            </div>
+                          </details>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Upload Form Modal - Only visible when + button is clicked */}
+        {showUploadForm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-lg">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold text-blue-300">Upload Evidence</h2>
+                <button 
+                  onClick={() => setShowUploadForm(false)}
+                  className="text-gray-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <div className="mb-4 relative">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    onChange={handleFileChange}
+                    className="w-full border border-gray-600 bg-gray-700 p-2 rounded"
+                    disabled={isLoading}
+                  />
+                  <button 
+                    onClick={handleOpenCamera}
+                    className="bg-blue-500 hover:bg-blue-600 px-3 py-2 rounded text-xl"
+                    title="Take Photo"
+                  >
+                    📷
+                  </button>
+                  <button 
+                    onClick={handleOpenVideo}
+                    className="bg-blue-500 hover:bg-blue-600 px-3 py-2 rounded text-xl"
+                    title="Record Video"
+                  >
+                    🎥
+                  </button>
+                </div>
+                {file && (
+                  <div className="mt-2 text-sm text-green-400">
+                    Selected: {file.name} ({formatFileSize(file.size)})
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <input
+                  type="text"
+                  name="location"
+                  placeholder="Location"
+                  value={evidenceDetails.location}
+                  onChange={handleEvidenceFormChange}
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+                />
+                <input
+                  type="text"
+                  name="gps"
+                  placeholder="GPS Coordinates"
+                  value={evidenceDetails.gps}
+                  onChange={handleEvidenceFormChange}
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+                />
+                <input
+                  type="datetime-local"
+                  name="timestamp"
+                  value={evidenceDetails.timestamp}
+                  onChange={handleEvidenceFormChange}
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+                />
+                <input
+                  type="text"
+                  name="retriever"
+                  placeholder="Retriever"
+                  value={evidenceDetails.retriever}
+                  onChange={handleEvidenceFormChange}
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+                />
+                <input
+                  type="text"
+                  name="handler"
+                  placeholder="Handler"
+                  value={evidenceDetails.handler}
+                  onChange={handleEvidenceFormChange}
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+                />
+                <input
+                  type="text"
+                  name="device_type"
+                  placeholder="Device Type"
+                  value={evidenceDetails.device_type}
+                  onChange={handleEvidenceFormChange}
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+                />
+                <select
+                  name="status"
+                  value={evidenceDetails.status}
+                  onChange={handleEvidenceFormChange}
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded"
+                >
+                  <option value="Stored">Stored</option>
+                  <option value="Collected">Collected</option>
+                  <option value="Analyzed">Analyzed</option>
+                  <option value="Archived">Archived</option>
+                </select>
+                <button
+                  onClick={handleUpload}
+                  className={`w-full ${isLoading ? 'bg-gray-500' : 'bg-blue-500 hover:bg-blue-600'} text-white py-2 rounded transition`}
+                  disabled={isLoading}
+                >
+                  {isLoading ? 'Processing...' : 'Upload to IPFS'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Footer with user info (bottom left) and upload button */}
+      <footer className="bg-gray-800 p-4 border-t border-gray-700 flex justify-between items-center">
+        <div className="flex items-center">
+          <span className="text-gray-400 mr-2">Logged in as:</span>
+          <span className="text-white">{user.email}</span>
+          {user.isAdmin && <span className="ml-2 bg-purple-600 px-2 py-1 rounded text-xs">Admin</span>}
         </div>
-      )}
+        
+        {/* Plus button at bottom right */}
+        <button
+          onClick={() => setShowUploadForm(true)}
+          className="bg-blue-500 hover:bg-blue-600 text-white w-12 h-12 rounded-full flex items-center justify-center text-2xl shadow-lg"
+        >
+          +
+        </button>
+      </footer>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createDirectory } from "../../lib/ipfs"; // Update the import path as needed
+import { createDirectory } from "../../lib/ipfs";
 
 interface Case {
   id: string;
@@ -17,6 +17,7 @@ export default function HomePage() {
   const [cases, setCases] = useState<Case[]>([]);
   const [newCase, setNewCase] = useState({ title: "", description: "" });
   const [isLoading, setIsLoading] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
 
   useEffect(() => {
     const currentUser = localStorage.getItem("currentUser");
@@ -54,6 +55,7 @@ export default function HomePage() {
       localStorage.setItem("criminalCases", JSON.stringify(updatedCases));
       setCases(updatedCases);
       setNewCase({ title: "", description: "" });
+      setIsFormOpen(false);
       
     } catch (error) {
       console.error("Error creating case:", error);
@@ -63,59 +65,98 @@ export default function HomePage() {
     }
   };
 
-  return (
-    <div className="flex flex-col items-center p-6 min-h-screen bg-gray-900 text-white">
-      <h1 className="text-4xl font-bold text-blue-400">Criminal Case Management</h1>
-      <div className="w-full max-w-4xl bg-gray-800 p-6 rounded-lg shadow-lg mt-6">
-        <h2 className="text-2xl font-semibold text-green-400">Add New Case</h2>
-        <input
-          type="text"
-          placeholder="Case Title"
-          value={newCase.title}
-          onChange={(e) => setNewCase({ ...newCase, title: e.target.value })}
-          className="w-full p-2 mt-2 bg-gray-700 border border-gray-600 rounded"
-        />
-        <textarea
-          placeholder="Case Description"
-          value={newCase.description}
-          onChange={(e) => setNewCase({ ...newCase, description: e.target.value })}
-          className="w-full p-2 mt-2 bg-gray-700 border border-gray-600 rounded"
-        />
-        <button
-          onClick={handleAddCase}
-          disabled={isLoading}
-          className="w-full bg-green-600 px-4 py-2 rounded hover:bg-green-700 mt-3"
-        >
-          {isLoading ? "Adding..." : "Add Case"}
-        </button>
-      </div>
+  const handleCaseClick = (caseId: string) => {
+    router.push(`/?caseId=${caseId}`);
+  };
 
-      <div className="w-full max-w-4xl bg-gray-800 p-6 rounded-lg shadow-lg mt-6">
-  <h2 className="text-2xl font-semibold text-blue-400">All Cases</h2>
-  {cases.length === 0 ? (
-    <p className="text-gray-400 mt-2">No cases available.</p>
-  ) : (
-    <ul className="mt-4">
-      {cases.map((caseItem) => (
-        <li key={caseItem.id} className="border-b border-gray-600 p-4 flex justify-between items-center">
-          <div>
-            <h3 className="text-lg font-semibold">{caseItem.title}</h3>
-            <p className="text-gray-400 text-sm">{caseItem.description}</p>
-            <p className="text-gray-500 text-xs">Created by: {caseItem.createdBy} on {new Date(caseItem.dateCreated).toLocaleString()}</p>
+  const openForm = () => {
+    setIsFormOpen(true);
+  };
+
+  const closeForm = () => {
+    setIsFormOpen(false);
+    setNewCase({ title: "", description: "" });
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-white relative">
+      {/* Header */}
+      <header className="p-6 bg-gray-800">
+        <h1 className="text-4xl font-bold text-blue-400 text-center">Criminal Case Management</h1>
+      </header>
+
+      {/* Main Content - Case Folders */}
+      <main className="p-8">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+          {cases.length === 0 ? (
+            <div className="col-span-full text-center py-10">
+              <p className="text-gray-400 text-lg">No cases available.</p>
+              <p className="text-gray-500">Click the + button to create your first case</p>
+            </div>
+          ) : (
+            cases.map((caseItem) => (
+              <div 
+                key={caseItem.id} 
+                className="flex flex-col items-center cursor-pointer transition-transform hover:scale-105"
+                onClick={() => handleCaseClick(caseItem.id)}
+              >
+                <div className="text-6xl mb-2">📁</div>
+                <h3 className="text-center font-medium text-sm truncate w-full">{caseItem.title}</h3>
+                <p className="text-gray-500 text-xs">ID: {caseItem.id}</p>
+              </div>
+            ))
+          )}
+        </div>
+      </main>
+
+      {/* Floating Action Button for Creating New Case */}
+      <button
+        onClick={openForm}
+        className="fixed bottom-8 right-8 w-16 h-16 bg-green-500 rounded-full flex items-center justify-center text-4xl shadow-lg hover:bg-green-600 transition-colors"
+      >
+        ➕
+      </button>
+
+      {/* Modal Form for Creating New Case */}
+      {isFormOpen && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-70 z-50">
+          <div className="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-md">
+            <h2 className="text-2xl font-semibold text-green-400 mb-4">Create New Case</h2>
+            
+            <input
+              type="text"
+              placeholder="Case Title"
+              value={newCase.title}
+              onChange={(e) => setNewCase({ ...newCase, title: e.target.value })}
+              className="w-full p-3 mb-3 bg-gray-700 border border-gray-600 rounded"
+            />
+            
+            <textarea
+              placeholder="Case Description"
+              value={newCase.description}
+              onChange={(e) => setNewCase({ ...newCase, description: e.target.value })}
+              className="w-full p-3 mb-4 bg-gray-700 border border-gray-600 rounded min-h-32"
+            />
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={handleAddCase}
+                disabled={isLoading}
+                className="flex-1 bg-green-600 px-4 py-3 rounded font-medium hover:bg-green-700"
+              >
+                {isLoading ? "Creating..." : "Create Case"}
+              </button>
+              
+              <button
+                onClick={closeForm}
+                className="flex-1 bg-gray-600 px-4 py-3 rounded font-medium hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-          <div className="flex space-x-2">
-            <button
-              onClick={() => router.push(`/?caseId=${caseItem.id}`)}
-              className="bg-blue-500 px-3 py-1 rounded text-sm hover:bg-blue-600"
-            >
-              Details
-            </button>
-          </div>
-        </li>
-      ))}
-    </ul>
-  )}
-</div>
+        </div>
+      )}
     </div>
   );
 }

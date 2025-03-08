@@ -1,16 +1,17 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
-import { uploadFile } from "../../lib/ipfs";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function CameraPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [user, setUser] = useState<{ email: string } | null>(null);
   const [image, setImage] = useState<string | null>(null);
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   useEffect(() => {
     const currentUser = localStorage.getItem("currentUser");
@@ -25,12 +26,19 @@ export default function CameraPage() {
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: "environment", // Prefer back camera if available
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        } 
+      });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
     } catch (error) {
-      console.error("Error accessing webcam:", error);
+      console.error("Error accessing camera:", error);
+      alert("Could not access camera. Please check permissions.");
     }
   };
 
@@ -38,7 +46,10 @@ export default function CameraPage() {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setLocation({ lat: position.coords.latitude, lon: position.coords.longitude });
+          setLocation({ 
+            lat: position.coords.latitude, 
+            lon: position.coords.longitude 
+          });
         },
         (error) => {
           console.error("Error getting location:", error);
@@ -51,65 +62,134 @@ export default function CameraPage() {
 
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
-      const context = canvasRef.current.getContext("2d");
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      
+      // Set canvas dimensions to match video
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      const context = canvas.getContext("2d");
       if (context) {
-        context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
-        setImage(canvasRef.current.toDataURL("image/png"));
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageDataUrl = canvas.toDataURL("image/png");
+        setImage(imageDataUrl);
       }
     }
   };
 
-  const handleUpload = async () => {
-    if (!image) return alert("No image to upload");
-    setImage(null);
-
+  const handleUpload = () => {
+    if (!image) {
+      alert("Please capture a photo first");
+      return;
+    }
+    
+    setIsLoading(true);
+    
     try {
-      const response = await fetch(image);
-      const blob = await response.blob();
-      const file = new File([blob], `photo_${Date.now()}.png`, { type: "image/png" });
-      const metadata = JSON.stringify({ location, user: user?.email });
-      const fileWithMetadata = new File([file, metadata], file.name, { type: file.type });
-      await uploadFile(fileWithMetadata, user?.email);
-      alert("Photo uploaded successfully!");
+      // Store the image data in localStorage for the main page to retrieve
+      localStorage.setItem("cameraPhoto", image);
+      
+      // Get the caseId from URL if it exists
+      const caseId = searchParams.get('caseId');
+      
+      // Navigate back to the main page with the caseId parameter if it exists
+      const redirectPath = caseId ? `/?caseId=${caseId}` : '/';
+      router.push(redirectPath);
     } catch (error) {
-      console.error("Upload failed:", error);
-      alert("Upload failed");
+      console.error("Error handling photo upload:", error);
+      setIsLoading(false);
+      alert("Failed to process photo");
+    }
+  };
+
+  const handleCancel = () => {
+    // Get the caseId from URL if it exists
+    const caseId = searchParams.get('caseId');
+    
+    // Navigate back to the main page with the caseId parameter if it exists
+    const redirectPath = caseId ? `/?caseId=${caseId}` : '/';
+    router.push(redirectPath);
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      const tracks = stream.getTracks();
+      
+      tracks.forEach(track => {
+        track.stop();
+      });
+      
+      videoRef.current.srcObject = null;
     }
   };
 
   return (
     <div className="flex flex-col items-center p-6 min-h-screen bg-gray-900 text-white">
       <h1 className="text-4xl font-extrabold mb-6">Camera Upload</h1>
-      <video ref={videoRef} autoPlay className="w-80 h-60 rounded-lg shadow-lg bg-black" />
-      <canvas ref={canvasRef} width={640} height={480} className="hidden" />
-      <button
-        onClick={capturePhoto}
-        className="mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300 shadow-md"
-      >
-        Capture Photo
-      </button>
-      {image && (
-        <div className="mt-6 bg-gray-800 p-4 rounded-lg shadow-lg w-80 flex flex-col items-center">
-          <img src={image} alt="Captured" className="w-full h-60 rounded-lg" />
-          <p className="text-sm text-gray-400 mt-2">
-            Location: {location ? `${location.lat}, ${location.lon}` : "Fetching..."}
+      
+      {!image ? (
+        <>
+          <div className="relative w-full max-w-lg">
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline
+              className="w-full h-auto rounded-lg shadow-lg bg-black"
+            />
+            <div className="text-sm text-gray-400 mt-2 text-center">
+              Location: {location ? `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}` : "Fetching..."}
+            </div>
+          </div>
+          
+          <button
+            onClick={capturePhoto}
+            className="mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg transition duration-300 shadow-md w-64"
+          >
+            Capture Photo
+          </button>
+          
+          <button
+            onClick={handleCancel}
+            className="mt-4 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300 shadow-md"
+          >
+            Cancel
+          </button>
+        </>
+      ) : (
+        <div className="mt-6 bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-lg flex flex-col items-center">
+          <img src={image} alt="Captured" className="w-full rounded-lg shadow-md" />
+          
+          <p className="text-sm text-gray-400 mt-4">
+            Location: {location ? `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}` : "Unknown"}
           </p>
-          <div className="flex gap-4 mt-4">
+          
+          <div className="flex gap-4 mt-6 w-full">
             <button
               onClick={handleUpload}
-              className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300 shadow-md"
+              disabled={isLoading}
+              className={`${isLoading ? 'bg-green-800' : 'bg-green-600 hover:bg-green-700'} text-white font-bold py-3 px-6 rounded-lg transition duration-300 shadow-md flex-1`}
             >
-              Upload
+              {isLoading ? 'Processing...' : 'Upload'}
             </button>
+            
             <button
-              onClick={() => setImage(null)}
-              className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300 shadow-md"
+              onClick={() => {
+                setImage(null);
+                startCamera(); // Restart camera after retake
+              }}
+              disabled={isLoading}
+              className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 shadow-md flex-1"
             >
               Retake
             </button>
           </div>
         </div>
       )}
+      
+      {/* Hidden canvas for image capture */}
+      <canvas ref={canvasRef} className="hidden" />
     </div>
   );
 }
