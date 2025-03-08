@@ -6,6 +6,7 @@ for user in appUser admin; do
 {
   "name": "$user",
   "mspId": "Org1MSP",
+  "type": "X.509",
   "credentials": {
     "certificate": "$cert",
     "privateKey": "$key"
