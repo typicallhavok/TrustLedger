@@ -21,8 +21,6 @@ type NetworkConfig struct {
 	Orderers      map[string]OrdererConfig `json:"orderers,omitempty"`
 }
 
-// Add other necessary structs for network configuration
-
 type ClientConfig struct {
 	Organization string `json:"organization"`
 }
@@ -41,12 +39,16 @@ type PeerConfig struct {
 type CAConfig struct {
 	URL        string    `json:"url"`
 	CAName     string    `json:"caName"`
-	TLSCACerts TLSConfig `json:"tlsCACerts"`
-	Registrar  Registrar `json:"registrar"` // Change from []Registrar to Registrar (map)
+	TLSCACerts TLSList   `json:"tlsCACerts"` // Fix: Use TLSList to store array
+	Registrar  Registrar `json:"registrar"`
 }
 
 type TLSConfig struct {
-	PEM []string `json:"pem"` // Change from string to []string (array)
+	PEM string `json:"pem"` // Fix: Keep this as a string for Peers
+}
+
+type TLSList struct {
+	PEM []string `json:"pem"` // Fix: Use an array for Certificate Authorities
 }
 
 type Registrar struct {
@@ -129,7 +131,7 @@ func Generate() error {
 			config.Peers[peerName] = PeerConfig{
 				URL: fmt.Sprintf("grpcs://%s", peerHostList[i]),
 				TLSCACerts: TLSConfig{
-					PEM: []string{certPEM}, // Change from string to array
+					PEM: certPEM, // Fix: Keep as a string for Peers
 				},
 			}
 		}
@@ -159,13 +161,13 @@ func Generate() error {
 	config.CAs[caName] = CAConfig{
 		URL:    fmt.Sprintf("https://%s", caHost),
 		CAName: caOrgName,
-		TLSCACerts: TLSConfig{
-			PEM: []string{caCertPEM}, // Change from string to array
+		TLSCACerts: TLSList{
+			PEM: []string{caCertPEM}, // Fix: Keep as an array for CAs
 		},
 		Registrar: Registrar{
 			EnrollID:     "admin",
 			EnrollSecret: "adminpw",
-		}, // Change from slice to map
+		},
 	}
 
 	// Create directory if it doesn't exist
