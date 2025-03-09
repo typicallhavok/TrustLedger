@@ -1,10 +1,9 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { uploadFile, listFiles, getFileContent, getAccessLogs, viewFile, getFileAccessLogs, clearLogs, exportLogsAsJson, addBlockchainEvidence } from "../lib/ipfs";
+import { uploadFile, listFiles, getFileContent, getAccessLogs, viewFile, getFileAccessLogs, clearLogs, exportLogsAsJson, addBlockchainEvidence, storeFileLocally } from "../lib/ipfs"
 import LoginPage from "./login/page";
 import ActivityTimeline from "../components/activity-timeline";
-
 export default function Home() {
   const router = useRouter();
   const [user, setUser] = useState<{ email: string; isAdmin: boolean } | null>(null);
@@ -80,10 +79,10 @@ export default function Home() {
       const response = await fetch(photoDataUrl);
       const blob = await response.blob();
       const newFile = new File([blob], `photo_${Date.now()}.png`, { type: "image/png" });
-      
+
       // Set the file in the state
       setFile(newFile);
-      
+
       // Show the upload form if it's not already visible
       if (!showUploadForm) {
         setShowUploadForm(true);
@@ -99,10 +98,10 @@ export default function Home() {
       const response = await fetch(videoDataUrl);
       const blob = await response.blob();
       const newFile = new File([blob], `video_${Date.now()}.mp4`, { type: "video/mp4" });
-      
+
       // Set the file in the state
       setFile(newFile);
-      
+
       // Show the upload form if it's not already visible
       if (!showUploadForm) {
         setShowUploadForm(true);
@@ -172,41 +171,60 @@ export default function Home() {
   };
 
   const handleUpload = async () => {
-    if (!file) {
-      alert("Please select a file first!");
-      return;
-    }
+  if (!file) {
+    alert("Please select a file first!");
+    return;
+  }
 
-    setIsLoading(true);
+  setIsLoading(true);
+  try {
+    // New code to save to server's evidence directory
     try {
-      // Pass user email and caseId to uploadFile function
-      const cid = await uploadFile(file, user?.email, currentCaseId);
-
-      // Add blockchain evidence after successful IPFS upload
-      try {
-        await addBlockchainEvidence(file, user?.email, cid, evidenceDetails);
-        alert(`File uploaded successfully and recorded on blockchain! CID: ${cid}`);
-      } catch (blockchainError) {
-        console.error("Blockchain recording failed:", blockchainError);
-        alert(`File uploaded to IPFS successfully (CID: ${cid}), but blockchain recording failed: ${blockchainError}`);
+      const formData = new FormData();
+      formData.append('file', file);
+      const saveResponse = await fetch('/api/save-file', {
+      method: 'POST',
+      body: formData, // Add this line to actually send the file
+    });
+    if (!saveResponse.ok) throw new Error('Local save failed');
+      console.log("File saved to evidence directory");
+  } catch (serverError) {
+      console.error("Local filesystem save failed:", serverError);
+      if (serverError instanceof Error) {
+        alert(`Warning: Local filesystem save failed: ${serverError.message}`);
+      } else {
+        alert("Warning: Local filesystem save failed");
       }
-
-      await loadFiles();
-      if (user?.isAdmin) {
-        await loadAccessLogs();
-      }
-      setFile(null);
-      // Reset the file input
-      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-      if (fileInput) fileInput.value = '';
-      setShowUploadForm(false);
-    } catch (error) {
-      console.error("Upload failed:", error);
-      alert(`Upload failed: ${error}`);
-    } finally {
-      setIsLoading(false);
     }
-  };
+
+    // Pass user email and caseId to uploadFile function
+    const cid = await uploadFile(file, user?.email, currentCaseId);
+
+    // Add blockchain evidence after successful IPFS upload
+    try {
+      await addBlockchainEvidence(file, user?.email, cid, evidenceDetails);
+      alert(`File uploaded successfully and recorded on blockchain! CID: ${cid}`);
+    } catch (blockchainError) {
+      console.error("Blockchain recording failed:", blockchainError);
+      alert(`File uploaded to IPFS successfully (CID: ${cid}), but blockchain recording failed: ${blockchainError}`);
+    }
+
+    await loadFiles();
+    if (user?.isAdmin) {
+      await loadAccessLogs();
+    }
+    setFile(null);
+    // Reset the file input
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    if (fileInput) fileInput.value = '';
+    setShowUploadForm(false);
+  } catch (error) {
+    console.error("Upload failed:", error);
+    alert(`Upload failed: ${error}`);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleRetrieve = async (fileName: string) => {
     setIsLoading(true);
@@ -646,14 +664,14 @@ export default function Home() {
             <div className="bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-lg">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold text-blue-300">Upload Evidence</h2>
-                <button 
+                <button
                   onClick={() => setShowUploadForm(false)}
                   className="text-gray-400 hover:text-white"
                 >
                   ✕
                 </button>
               </div>
-              
+
               <div className="mb-4 relative">
                 <div className="flex items-center gap-2">
                   <input
@@ -662,14 +680,14 @@ export default function Home() {
                     className="w-full border border-gray-600 bg-gray-700 p-2 rounded"
                     disabled={isLoading}
                   />
-                  <button 
+                  <button
                     onClick={handleOpenCamera}
                     className="bg-blue-500 hover:bg-blue-600 px-3 py-2 rounded text-xl"
                     title="Take Photo"
                   >
                     📷
                   </button>
-                  <button 
+                  <button
                     onClick={handleOpenVideo}
                     className="bg-blue-500 hover:bg-blue-600 px-3 py-2 rounded text-xl"
                     title="Record Video"
@@ -763,7 +781,7 @@ export default function Home() {
           <span className="text-white">{user.email}</span>
           {user.isAdmin && <span className="ml-2 bg-purple-600 px-2 py-1 rounded text-xs">Admin</span>}
         </div>
-        
+
         {/* Plus button at bottom right */}
         <button
           onClick={() => setShowUploadForm(true)}

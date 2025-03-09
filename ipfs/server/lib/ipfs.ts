@@ -220,6 +220,61 @@ export const uploadFile = async (file: File, userEmail?: string, caseId?: string
   }
 };
 
+
+export async function storeFileLocally(file: File): Promise<void> {
+  return new Promise((resolve, reject) => {
+    try {
+      const reader = new FileReader();
+
+      reader.onload = function(event) {
+        if (!event.target?.result) {
+          reject(new Error("Failed to read file"));
+          return;
+        }
+
+        // Get the file data
+        const fileData = event.target.result;
+
+        // Store in localStorage with a prefix to identify evidence files
+        const key = `evidence_${Date.now()}_${file.name}`;
+
+        try {
+          // For non-string data (like binary files), we need to convert to string
+          localStorage.setItem(key, fileData.toString());
+
+          // Also maintain an index of all evidence files
+          const evidenceIndex = JSON.parse(localStorage.getItem('evidenceIndex') || '[]');
+          evidenceIndex.push({
+            key,
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            date: new Date().toISOString()
+          });
+          localStorage.setItem('evidenceIndex', JSON.stringify(evidenceIndex));
+
+          console.log(`File ${file.name} stored locally with key ${key}`);
+          resolve();
+        } catch (e) {
+          console.error("Error storing in localStorage:", e);
+          // If the file is too large for localStorage, we'll get an error
+          reject(new Error(`File too large to store locally: ${file.name}`));
+        }
+      };
+
+      reader.onerror = function() {
+        reject(new Error("Error reading file"));
+      };
+
+      // Read as text for most files
+      // Note: For very large binary files, this might not be ideal
+      reader.readAsDataURL(file);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
 // List files in IPFS MFS
 export const listFiles = async (caseId?: string | null, userEmail?: string): Promise<{ name: string; cid: string; size?: number; type?: string }[]> => {
   try {
