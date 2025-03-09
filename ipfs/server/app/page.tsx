@@ -80,10 +80,22 @@ export default function Home() {
       const response = await fetch(photoDataUrl);
       const blob = await response.blob();
       const newFile = new File([blob], `photo_${Date.now()}.png`, { type: "image/png" });
-
+  
       // Set the file in the state
       setFile(newFile);
-
+  
+      // Check if GPS coordinates were saved and update the evidenceDetails
+      const gpsCoordinates = localStorage.getItem("cameraGPS");
+      if (gpsCoordinates) {
+        setEvidenceDetails(prevState => ({
+          ...prevState,
+          gps: gpsCoordinates
+        }));
+        
+        // Clear the GPS data from localStorage
+        localStorage.removeItem("cameraGPS");
+      }
+  
       // Show the upload form if it's not already visible
       if (!showUploadForm) {
         setShowUploadForm(true);
@@ -99,10 +111,22 @@ export default function Home() {
       const response = await fetch(videoDataUrl);
       const blob = await response.blob();
       const newFile = new File([blob], `video_${Date.now()}.mp4`, { type: "video/mp4" });
-
+  
       // Set the file in the state
       setFile(newFile);
-
+  
+      // Check if GPS coordinates were saved and update the evidenceDetails
+      const videoGPS = localStorage.getItem("videoLocation");
+      if (videoGPS) {
+        setEvidenceDetails(prevState => ({
+          ...prevState,
+          gps: videoGPS
+        }));
+        
+        // Clear the GPS data from localStorage
+        localStorage.removeItem("videoLocation");
+      }
+  
       // Show the upload form if it's not already visible
       if (!showUploadForm) {
         setShowUploadForm(true);
@@ -430,7 +454,7 @@ export default function Home() {
     <div className="flex flex-col h-screen bg-gray-900 text-white">
       {/* Header with title and logout button */}
       <header className="bg-gray-800 p-4 flex justify-between items-center shadow-md">
-        <h1 className="text-3xl font-bold text-blue-400">IPFS File Storage</h1>
+        <h1 className="text-3xl font-bold text-blue-400">Evidence File Storage</h1>
         <button
           onClick={handleLogout}
           className="bg-red-600 px-3 py-1 rounded hover:bg-red-700"

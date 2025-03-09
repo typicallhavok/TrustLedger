@@ -90,6 +90,11 @@ export default function CameraPage() {
       // Store the image data in localStorage for the main page to retrieve
       localStorage.setItem("cameraPhoto", image);
       
+      // Store the GPS coordinates in localStorage
+      if (location) {
+        localStorage.setItem("cameraGPS", `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}`);
+      }
+      
       // Get the caseId from URL if it exists
       const caseId = searchParams.get('caseId');
       

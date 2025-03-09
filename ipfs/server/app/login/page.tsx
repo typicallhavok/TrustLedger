@@ -63,7 +63,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex flex-col items-center p-6 min-h-screen bg-gray-900 text-white">
-      <h1 className="text-4xl font-bold mb-6 text-blue-400">IPFS File Storage</h1>
+      <h1 className="text-4xl font-bold mb-6 text-blue-400">Evidence File Storage</h1>
       
       <div className="w-full max-w-md bg-gray-800 p-8 rounded-lg shadow-lg">
         <h2 className="text-2xl font-semibold mb-6 text-center">

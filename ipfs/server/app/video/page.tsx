@@ -65,7 +65,11 @@ export default function VideoPage() {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setLocation({ lat: position.coords.latitude, lon: position.coords.longitude });
+          const locationData = { lat: position.coords.latitude, lon: position.coords.longitude };
+          setLocation(locationData);
+          
+          // Store location data immediately when it's available
+          localStorage.setItem("videoLocation", `${locationData.lat},${locationData.lon}`);
         },
         (error) => {
           console.error("Error getting location:", error);
