@@ -20,6 +20,7 @@ export default function Home() {
   const [currentFileForLogs, setCurrentFileForLogs] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [currentCaseId, setCurrentCaseId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState<string>("");
   const [showUploadForm, setShowUploadForm] = useState<boolean>(false);
   const [evidenceDetails, setEvidenceDetails] = useState({
     location: "",
@@ -226,6 +227,23 @@ export default function Home() {
   }
 };
 
+  // Add this function with your other handler functions (around line 211)
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+  };
+
+  const handleBack = () => {
+    // If we're viewing logs or timeline, close those views first
+    if (isViewingFileLogs || isViewingAllLogs || isViewingTimeline) {
+      setIsViewingFileLogs(false);
+      setIsViewingAllLogs(false);
+      setIsViewingTimeline(false);
+    } else {
+      // Otherwise, navigate back to the previous page
+      router.back();
+    }
+  };
+
   const handleRetrieve = async (fileName: string) => {
     setIsLoading(true);
     try {
@@ -421,6 +439,39 @@ export default function Home() {
         </button>
       </header>
 
+      {/* Back button and Search bar */}
+<div className="bg-gray-800 border-t border-gray-700 px-4 py-3 flex justify-between items-center">
+  <button
+    onClick={handleBack}
+    className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded flex items-center"
+  >
+    <span>← Back</span>
+  </button>
+  
+  <div className="flex-1 max-w-2xl mx-4">
+    <div className="relative">
+      <input
+        type="text"
+        placeholder="Search files..."
+        value={searchTerm}
+        onChange={handleSearch}
+        className="w-full bg-gray-700 border border-gray-600 rounded pl-10 pr-4 py-2 text-white focus:outline-none focus:border-blue-500"
+      />
+      <div className="absolute left-3 top-2.5 text-gray-400">
+        🔍
+      </div>
+      {searchTerm && (
+        <button 
+          onClick={() => setSearchTerm("")}
+          className="absolute right-3 top-2.5 text-gray-400 hover:text-white"
+        >
+          ✕
+        </button>
+      )}
+    </div>
+  </div>
+</div>
+
       {/* Admin Actions Bar */}
       {user.isAdmin && (
         <div className="bg-gray-800 border-t border-gray-700 px-4 py-2 flex justify-center space-x-4">
@@ -471,7 +522,7 @@ export default function Home() {
             <p className="text-gray-400">No files uploaded yet.</p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {files.map((file) => (
+              {files.filter(file=>searchTerm===""||file.name.toLowerCase().includes(searchTerm.toLowerCase())).map((file) => (
                 <div key={file.cid} className="flex flex-col p-4 border border-gray-700 rounded bg-gray-700 hover:bg-gray-600 transition">
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-gray-300 font-medium truncate">{file.name}</span>
