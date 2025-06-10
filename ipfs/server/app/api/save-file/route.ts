@@ -18,10 +18,10 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const path = join(evidenceDir, file.name);
 
-    await new Promise((resolve, reject) =>
+    await new Promise<void>((resolve, reject) =>
       createWriteStream(path)
-        .on('finish', resolve)
-        .on('error', reject)
+        .on('finish', () => resolve())
+        .on('error', (err) => reject(err))
         .end(buffer)
     );
 

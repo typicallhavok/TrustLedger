@@ -2,11 +2,7 @@
 import { create } from "ipfs-http-client";
 
 // Initialize IPFS client
-const client = create({
-  host: "127.0.0.1",
-  port: 5001,
-  protocol: "http",
-});
+const client = create({url: 'http://localhost:5002/api/v0'});
 
 // Enhanced log structure with additional fields
 interface AccessLog {

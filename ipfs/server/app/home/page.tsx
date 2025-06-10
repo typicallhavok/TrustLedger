@@ -41,13 +41,13 @@ export default function HomePage() {
     // Initialize cases with accessCount if not present
     const updatedCases = storedCases.map((c: any )=> ({
       ...c,
-      status: c.status || "open",
+      status: c.status === "closed" ? "closed" as "closed" : "open" as "open",
       accessCount: c.accessCount || 0,
       type: c.type || "Unknown"
     }));
     
     localStorage.setItem("criminalCases", JSON.stringify(updatedCases));
-    setCases(updatedCases);
+    setCases(updatedCases as Case[]);
   };
 
   const handleAddCase = async () => {
@@ -98,14 +98,14 @@ export default function HomePage() {
     // For open cases, increment access count and redirect
     const updatedCases = cases.map(c => {
       if (c.id === caseItem.id) {
-        return {...c, accessCount: c.accessCount + 1};
+        return { ...c, accessCount: c.accessCount + 1, status: c.status as "open" | "closed" };
       }
-      return c;
+      return { ...c, status: c.status as "open" | "closed" };
     });
-    
+
     localStorage.setItem("criminalCases", JSON.stringify(updatedCases));
-    setCases(updatedCases);
-    
+    setCases(updatedCases as Case[]);
+
     router.push(`/?caseId=${caseItem.id}`);
   };
 
@@ -119,13 +119,13 @@ export default function HomePage() {
     
     const updatedCases = cases.map(c => {
       if (c.id === caseId) {
-        return {...c, status: "closed"};
+        return { ...c, status: "closed" as "closed" };
       }
-      return c;
+      return { ...c, status: c.status as "open" | "closed" };
     });
     
     localStorage.setItem("criminalCases", JSON.stringify(updatedCases));
-    setCases(updatedCases);
+    setCases(updatedCases as Case[]);
   };
 
   // New function to reopen closed cases
@@ -139,13 +139,13 @@ export default function HomePage() {
     
     const updatedCases = cases.map(c => {
       if (c.id === caseId) {
-        return {...c, status: "open"};
+        return { ...c, status: "open" as "open" };
       }
-      return c;
+      return { ...c, status: c.status as "open" | "closed" };
     });
     
     localStorage.setItem("criminalCases", JSON.stringify(updatedCases));
-    setCases(updatedCases);
+    setCases(updatedCases as Case[]);
   };
 
   const openForm = () => {
@@ -229,9 +229,13 @@ export default function HomePage() {
   };
 
   // Add this function to generate colors for the case type pie chart
-  const generateTypeColors = (count) => {
+  interface GenerateTypeColors {
+    (count: number): string[];
+  }
+
+  const generateTypeColors: GenerateTypeColors = (count) => {
     // Predefined color palette 
-    const colorPalette = [
+    const colorPalette: string[] = [
       '#3B82F6', // blue
       '#10B981', // green
       '#F59E0B', // amber
