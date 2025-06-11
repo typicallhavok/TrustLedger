@@ -16,11 +16,257 @@ interface AccessLog {
   errorDetails?: string;
   userAgent?: string;
   mimeType?: string;
-  userEmail?: string; // Added user email field
+  userEmail?: string;
+  isEncrypted?: boolean;
+  encryptionAlgorithm?: string;
+}
+
+// Interface for encrypted file metadata
+interface EncryptedFileMetadata {
+  originalName: string;
+  originalSize: number;
+  mimeType: string;
+  encryptionAlgorithm: string;
+  iv: string;
+  salt: string;
+  timestamp: string;
+  userEmail?: string;
+  caseId?: string | null;
+}
+
+// Interface for file access permissions
+interface FilePermissions {
+  fileName: string;
+  cid: string;
+  allowedUsers: string[];
+  createdBy: string;
+  timestamp: string;
+  isPublic: boolean;
 }
 
 // In-memory storage for access logs
 let accessLogs: AccessLog[] = [];
+
+// In-memory storage for file permissions
+let filePermissions: FilePermissions[] = [];
+
+// Encryption utilities
+class EncryptionService {
+  // Generate a key from password using PBKDF2
+  static async deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+    const encoder = new TextEncoder();
+    const passwordBuffer = encoder.encode(password);
+    
+    const baseKey = await crypto.subtle.importKey(
+      'raw',
+      passwordBuffer,
+      'PBKDF2',
+      false,
+      ['deriveKey']
+    );
+
+    return crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: salt,
+        iterations: 100000,
+        hash: 'SHA-256'
+      },
+      baseKey,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  // Generate random salt
+  static generateSalt(): Uint8Array {
+    return crypto.getRandomValues(new Uint8Array(16));
+  }
+
+  // Generate random IV
+  static generateIV(): Uint8Array {
+    return crypto.getRandomValues(new Uint8Array(12));
+  }
+
+  // Encrypt file data
+  static async encryptFile(
+    fileData: ArrayBuffer, 
+    password: string
+  ): Promise<{
+    encryptedData: ArrayBuffer;
+    salt: Uint8Array;
+    iv: Uint8Array;
+  }> {
+    const salt = this.generateSalt();
+    const iv = this.generateIV();
+    const key = await this.deriveKey(password, salt);
+
+    const encryptedData = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: iv },
+      key,
+      fileData
+    );
+
+    return { encryptedData, salt, iv };
+  }
+
+  // Decrypt file data
+  static async decryptFile(
+    encryptedData: ArrayBuffer,
+    password: string,
+    salt: Uint8Array,
+    iv: Uint8Array
+  ): Promise<ArrayBuffer> {
+    const key = await this.deriveKey(password, salt);
+
+    try {
+      const decryptedData = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: iv },
+        key,
+        encryptedData
+      );
+      return decryptedData;
+    } catch (error) {
+      throw new Error('Invalid password or corrupted data');
+    }
+  }
+
+  // Create encrypted file package
+  static async createEncryptedPackage(
+    file: File,
+    password: string,
+    userEmail?: string,
+    caseId?: string | null
+  ): Promise<{
+    encryptedBuffer: ArrayBuffer;
+    metadata: EncryptedFileMetadata;
+  }> {
+    const fileBuffer = await file.arrayBuffer();
+    const { encryptedData, salt, iv } = await this.encryptFile(fileBuffer, password);
+
+    const metadata: EncryptedFileMetadata = {
+      originalName: file.name,
+      originalSize: file.size,
+      mimeType: file.type || getMimeType(file.name),
+      encryptionAlgorithm: 'AES-GCM-256',
+      iv: Array.from(iv).join(','),
+      salt: Array.from(salt).join(','),
+      timestamp: new Date().toISOString(),
+      userEmail,
+      caseId
+    };
+
+    // Combine metadata and encrypted data
+    const metadataString = JSON.stringify(metadata);
+    const metadataBuffer = new TextEncoder().encode(metadataString);
+    const metadataLength = new Uint32Array([metadataBuffer.length]);
+
+    // Create final package: [metadata_length][metadata][encrypted_data]
+    const packageBuffer = new ArrayBuffer(
+      4 + metadataBuffer.length + encryptedData.byteLength
+    );
+    
+    const packageView = new Uint8Array(packageBuffer);
+    packageView.set(new Uint8Array(metadataLength.buffer), 0);
+    packageView.set(metadataBuffer, 4);
+    packageView.set(new Uint8Array(encryptedData), 4 + metadataBuffer.length);
+
+    return { encryptedBuffer: packageBuffer, metadata };
+  }
+
+  // Extract and decrypt file package
+  static async extractEncryptedPackage(
+    packageBuffer: ArrayBuffer,
+    password: string
+  ): Promise<{
+    fileData: ArrayBuffer;
+    metadata: EncryptedFileMetadata;
+  }> {
+    const packageView = new Uint8Array(packageBuffer);
+    
+    // Extract metadata length
+    const metadataLength = new Uint32Array(packageBuffer.slice(0, 4))[0];
+    
+    // Extract metadata
+    const metadataBuffer = packageBuffer.slice(4, 4 + metadataLength);
+    const metadataString = new TextDecoder().decode(metadataBuffer);
+    const metadata: EncryptedFileMetadata = JSON.parse(metadataString);
+
+    // Extract encrypted data
+    const encryptedData = packageBuffer.slice(4 + metadataLength);
+
+    // Convert string arrays back to Uint8Array
+    const iv = new Uint8Array(metadata.iv.split(',').map(n => parseInt(n)));
+    const salt = new Uint8Array(metadata.salt.split(',').map(n => parseInt(n)));
+
+    // Decrypt the file data
+    const fileData = await this.decryptFile(encryptedData, password, salt, iv);
+
+    return { fileData, metadata };
+  }
+}
+
+// Permission management
+class PermissionManager {
+  static addFilePermission(
+    fileName: string,
+    cid: string,
+    createdBy: string,
+    allowedUsers: string[] = [],
+    isPublic: boolean = false
+  ): void {
+    const permission: FilePermissions = {
+      fileName,
+      cid,
+      allowedUsers: [...new Set([createdBy, ...allowedUsers])], // Ensure creator is always included
+      createdBy,
+      timestamp: new Date().toISOString(),
+      isPublic
+    };
+
+    // Remove existing permission for this file
+    filePermissions = filePermissions.filter(p => p.fileName !== fileName);
+    filePermissions.push(permission);
+  }
+
+  static checkFileAccess(fileName: string, userEmail: string): boolean {
+    const permission = filePermissions.find(p => p.fileName === fileName);
+    if (!permission) return true; // If no permission set, allow access (backward compatibility)
+    
+    return permission.isPublic || 
+           permission.allowedUsers.includes(userEmail) ||
+           permission.createdBy === userEmail;
+  }
+
+  static getFilePermissions(fileName: string): FilePermissions | null {
+    return filePermissions.find(p => p.fileName === fileName) || null;
+  }
+
+  static updateFilePermissions(
+    fileName: string,
+    allowedUsers: string[],
+    isPublic: boolean,
+    updatedBy: string
+  ): boolean {
+    const permissionIndex = filePermissions.findIndex(p => p.fileName === fileName);
+    if (permissionIndex === -1) return false;
+
+    const permission = filePermissions[permissionIndex];
+    
+    // Only creator can update permissions
+    if (permission.createdBy !== updatedBy) return false;
+
+    permission.allowedUsers = [...new Set([permission.createdBy, ...allowedUsers])];
+    permission.isPublic = isPublic;
+
+    return true;
+  }
+
+  static getAllPermissions(): FilePermissions[] {
+    return [...filePermissions];
+  }
+}
 
 // Function to get file mime type based on file name
 const getMimeType = (fileName: string): string => {
@@ -56,7 +302,7 @@ const getMimeType = (fileName: string): string => {
   return mimeTypes[extension] || 'application/octet-stream';
 };
 
-// Enhanced logging function with user tracking
+// Enhanced logging function with encryption tracking
 const logAccess = (
   fileName: string,
   action: string,
@@ -67,10 +313,11 @@ const logAccess = (
     fileType?: string;
     errorDetails?: string;
     mimeType?: string;
-    userEmail?: string; // Added user email option
+    userEmail?: string;
+    isEncrypted?: boolean;
+    encryptionAlgorithm?: string;
   } = {}
 ) => {
-  // Get browser information
   const userAgent = typeof window !== 'undefined' ? window.navigator.userAgent : 'Server';
 
   const logEntry: AccessLog = {
@@ -84,13 +331,13 @@ const logAccess = (
 
   accessLogs.push(logEntry);
 
-  // For debugging - log to console as well
-  console.log(`[${logEntry.timestamp}] ${action.toUpperCase()} ${fileName} - ${status} - User: ${options.userEmail || 'Unknown'}`);
+  const encryptionStatus = options.isEncrypted ? '[ENCRYPTED]' : '[UNENCRYPTED]';
+  console.log(`[${logEntry.timestamp}] ${action.toUpperCase()} ${fileName} ${encryptionStatus} - ${status} - User: ${options.userEmail || 'Unknown'}`);
 
   return logEntry;
 };
 
-// lib/ipfs.ts
+// Enhanced blockchain evidence function
 interface EvidenceDetails {
   location: string;
   gps: string;
@@ -99,53 +346,55 @@ interface EvidenceDetails {
   handler: string;
   device_type: string;
   status: string;
+  isEncrypted?: boolean;
+  encryptionAlgorithm?: string;
 }
 
-export const addBlockchainEvidence = async (fileData: File, userEmail: string | undefined, cid: string, evidenceDetails: EvidenceDetails) => {
-    try {
-      const response = await fetch('http://127.0.0.1:3000/evidence', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          timestamp: evidenceDetails.timestamp || new Date().toISOString(),
-          id: cid,
-          hash: cid,
-          retriever: evidenceDetails.retriever || userEmail,
-          handler: evidenceDetails.handler || userEmail,
-          location: evidenceDetails.location || "Digital Storage",
-          device_type: evidenceDetails.device_type || "IPFS",
-          status: evidenceDetails.status || "Stored"
-        }),
-      });
+export const addBlockchainEvidence = async (
+  fileData: File, 
+  userEmail: string | undefined, 
+  cid: string, 
+  evidenceDetails: EvidenceDetails
+) => {
+  try {
+    const response = await fetch('http://127.0.0.1:3000/evidence', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        timestamp: evidenceDetails.timestamp || new Date().toISOString(),
+        id: cid,
+        hash: cid,
+        retriever: evidenceDetails.retriever || userEmail,
+        handler: evidenceDetails.handler || userEmail,
+        location: evidenceDetails.location || "Digital Storage",
+        device_type: evidenceDetails.device_type || "IPFS",
+        status: evidenceDetails.status || "Stored",
+        isEncrypted: evidenceDetails.isEncrypted || false,
+        encryptionAlgorithm: evidenceDetails.encryptionAlgorithm
+      }),
+    });
 
-      if (!response.ok) {
-        throw new Error(`Blockchain API error: ${response.status}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error("Error adding blockchain evidence:", error);
-      throw error;
+    if (!response.ok) {
+      throw new Error(`Blockchain API error: ${response.status}`);
     }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Error adding blockchain evidence:", error);
+    throw error;
+  }
 };
 
-// Add this function to ipfs.ts
+// Directory creation with permission support
 export const createDirectory = async (dirPath: string, userEmail?: string): Promise<void> => {
   try {
-    // Make sure the path starts with a slash
     const normalizedPath = dirPath.startsWith('/') ? dirPath : `/${dirPath}`;
-
-    // Create directory with parents option to create any missing parent directories
     await client.files.mkdir(normalizedPath, { parents: true });
 
-    // Log successful directory creation
-    logAccess(dirPath, "directory_created", "success", {
-      userEmail
-    });
+    logAccess(dirPath, "directory_created", "success", { userEmail });
   } catch (error) {
-    // Log failed directory creation
     const errorMessage = error instanceof Error ? error.message : String(error);
     logAccess(dirPath, "directory_create_attempt", "error", {
       errorDetails: errorMessage,
@@ -157,7 +406,7 @@ export const createDirectory = async (dirPath: string, userEmail?: string): Prom
   }
 };
 
-// Make sure directory exists
+// Ensure directory exists
 const ensureDirectory = async () => {
   try {
     await client.files.stat('/my-files');
@@ -166,8 +415,17 @@ const ensureDirectory = async () => {
   }
 };
 
-// Upload file to IPFS and store in MFS
-export const uploadFile = async (file: File, userEmail?: string, caseId?: string | null): Promise<string> => {
+// Enhanced upload function with encryption support
+export const uploadFile = async (
+  file: File, 
+  userEmail?: string, 
+  caseId?: string | null,
+  encryptionOptions?: {
+    password: string;
+    allowedUsers?: string[];
+    isPublic?: boolean;
+  }
+): Promise<string> => {
   try {
     await ensureDirectory();
 
@@ -180,35 +438,74 @@ export const uploadFile = async (file: File, userEmail?: string, caseId?: string
       }
     }
 
-    // Define the correct path
-    const uploadPath = caseId ? `/my-files/${caseId}/${file.name}` : `/my-files/${file.name}`;
+    let uploadBuffer: ArrayBuffer;
+    let finalFileName: string;
+    let isEncrypted = false;
+    let encryptionAlgorithm: string | undefined;
 
-    const buffer = await file.arrayBuffer();
-    const fileSize = buffer.byteLength;
+    if (encryptionOptions?.password) {
+      // Encrypt the file
+      const { encryptedBuffer } = await EncryptionService.createEncryptedPackage(
+        file,
+        encryptionOptions.password,
+        userEmail,
+        caseId
+      );
+      
+      uploadBuffer = encryptedBuffer;
+      finalFileName = `${file.name}.encrypted`;
+      isEncrypted = true;
+      encryptionAlgorithm = 'AES-GCM-256';
+
+      // Set up permissions
+      PermissionManager.addFilePermission(
+        finalFileName,
+        '', // CID will be updated after upload
+        userEmail || 'anonymous',
+        encryptionOptions.allowedUsers || [],
+        encryptionOptions.isPublic || false
+      );
+    } else {
+      // Upload unencrypted
+      uploadBuffer = await file.arrayBuffer();
+      finalFileName = file.name;
+    }
+
+    const uploadPath = caseId ? `/my-files/${caseId}/${finalFileName}` : `/my-files/${finalFileName}`;
+    const fileSize = uploadBuffer.byteLength;
     const mimeType = getMimeType(file.name);
 
-    const added = await client.add(buffer);
+    const added = await client.add(uploadBuffer);
     const cid = added.cid.toString();
 
-    // Use the correct path here
     await client.files.cp(`/ipfs/${cid}`, uploadPath);
 
-    // Log successful upload with user email
-    logAccess(file.name, "uploaded", "success", {
+    // Update CID in permissions if encrypted
+    if (isEncrypted) {
+      const permission = PermissionManager.getFilePermissions(finalFileName);
+      if (permission) {
+        permission.cid = cid;
+      }
+    }
+
+    // Log successful upload
+    logAccess(finalFileName, "uploaded", "success", {
       cid,
       fileSize,
       fileType: file.type || mimeType,
       mimeType,
-      userEmail
+      userEmail,
+      isEncrypted,
+      encryptionAlgorithm
     });
 
     return cid;
   } catch (error) {
-    // Log failed upload with user email
     const errorMessage = error instanceof Error ? error.message : String(error);
     logAccess(file.name, "upload_attempt", "error", {
       errorDetails: errorMessage,
-      userEmail
+      userEmail,
+      isEncrypted: !!encryptionOptions?.password
     });
 
     console.error("Error uploading file:", error);
@@ -216,7 +513,7 @@ export const uploadFile = async (file: File, userEmail?: string, caseId?: string
   }
 };
 
-
+// Enhanced local storage function
 export async function storeFileLocally(file: File): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
@@ -228,17 +525,12 @@ export async function storeFileLocally(file: File): Promise<void> {
           return;
         }
 
-        // Get the file data
         const fileData = event.target.result;
-
-        // Store in localStorage with a prefix to identify evidence files
         const key = `evidence_${Date.now()}_${file.name}`;
 
         try {
-          // For non-string data (like binary files), we need to convert to string
           localStorage.setItem(key, fileData.toString());
 
-          // Also maintain an index of all evidence files
           const evidenceIndex = JSON.parse(localStorage.getItem('evidenceIndex') || '[]');
           evidenceIndex.push({
             key,
@@ -253,7 +545,6 @@ export async function storeFileLocally(file: File): Promise<void> {
           resolve();
         } catch (e) {
           console.error("Error storing in localStorage:", e);
-          // If the file is too large for localStorage, we'll get an error
           reject(new Error(`File too large to store locally: ${file.name}`));
         }
       };
@@ -262,8 +553,6 @@ export async function storeFileLocally(file: File): Promise<void> {
         reject(new Error("Error reading file"));
       };
 
-      // Read as text for most files
-      // Note: For very large binary files, this might not be ideal
       reader.readAsDataURL(file);
     } catch (error) {
       reject(error);
@@ -271,31 +560,29 @@ export async function storeFileLocally(file: File): Promise<void> {
   });
 }
 
-// List files in IPFS MFS
-export const listFiles = async (caseId?: string | null, userEmail?: string): Promise<{ name: string; cid: string; size?: number; type?: string }[]> => {
+// Enhanced list files with permission checking
+export const listFiles = async (
+  caseId?: string | null, 
+  userEmail?: string
+): Promise<{ name: string; cid: string; size?: number; type?: string; isEncrypted?: boolean; hasAccess?: boolean }[]> => {
   try {
     await ensureDirectory();
 
-    // Define the path based on caseId
     const listPath = caseId ? `/my-files/${caseId}` : `/my-files`;
-
     const files = [];
 
-    // Create the directory if it doesn't exist (especially for case directories)
+    // Create directory if it doesn't exist
     try {
       await client.files.stat(listPath);
     } catch (error) {
       if (caseId) {
         await client.files.mkdir(listPath, { parents: true });
-
-        // Log directory creation
         logAccess(listPath, "directory_created", "success", { userEmail });
       }
     }
 
-    // List only files in the specified path
+    // List files
     for await (const file of client.files.ls(listPath)) {
-      // Skip subdirectories if we're viewing a case folder
       if (caseId && file.type === 'directory') {
         continue;
       }
@@ -303,24 +590,37 @@ export const listFiles = async (caseId?: string | null, userEmail?: string): Pro
       try {
         const stat = await client.files.stat(`${listPath}/${file.name}`);
 
-        // Only add if it's a file or if we're at the root without a caseId
         if (stat.type === 'file' || (!caseId && stat.type === 'directory')) {
           const fileSize = stat.size;
-          const mimeType = getMimeType(file.name);
+          const isEncrypted = file.name.endsWith('.encrypted');
+          const originalName = isEncrypted ? file.name.replace('.encrypted', '') : file.name;
+          const mimeType = getMimeType(originalName);
+
+          // Check access permissions
+          const hasAccess = userEmail ? PermissionManager.checkFileAccess(file.name, userEmail) : true;
 
           files.push({
             name: file.name,
             cid: file.cid.toString(),
             size: fileSize,
-            type: mimeType
+            type: mimeType,
+            isEncrypted,
+            hasAccess
           });
         }
       } catch (e) {
-        files.push({ name: file.name, cid: file.cid.toString() });
+        const isEncrypted = file.name.endsWith('.encrypted');
+        const hasAccess = userEmail ? PermissionManager.checkFileAccess(file.name, userEmail) : true;
+        
+        files.push({ 
+          name: file.name, 
+          cid: file.cid.toString(),
+          isEncrypted,
+          hasAccess
+        });
       }
     }
 
-    // Log successful listing with user email
     logAccess(listPath, "list_files", "success", {
       fileSize: files.length,
       userEmail
@@ -328,10 +628,7 @@ export const listFiles = async (caseId?: string | null, userEmail?: string): Pro
 
     return files;
   } catch (error) {
-    // Define the path for error logging
     const listPath = caseId ? `/my-files/${caseId}` : `/my-files`;
-
-    // Log failed listing with user email
     const errorMessage = error instanceof Error ? error.message : String(error);
     logAccess(listPath, "list_files", "error", {
       errorDetails: errorMessage,
@@ -343,17 +640,23 @@ export const listFiles = async (caseId?: string | null, userEmail?: string): Pro
   }
 };
 
-// Get CID and stats for a specific file
-export const getFileStats = async (fileName: string, caseId?: string | null): Promise<{ cid: string; size: number; type: string } | null> => {
+// Enhanced file stats function
+export const getFileStats = async (
+  fileName: string, 
+  caseId?: string | null
+): Promise<{ cid: string; size: number; type: string; isEncrypted: boolean } | null> => {
   try {
     const filePath = caseId ? `/my-files/${caseId}/${fileName}` : `/my-files/${fileName}`;
     const stat = await client.files.stat(filePath);
-    const mimeType = getMimeType(fileName);
+    const isEncrypted = fileName.endsWith('.encrypted');
+    const originalName = isEncrypted ? fileName.replace('.encrypted', '') : fileName;
+    const mimeType = getMimeType(originalName);
 
     return {
       cid: stat.cid.toString(),
       size: stat.size,
-      type: mimeType
+      type: mimeType,
+      isEncrypted
     };
   } catch (error) {
     console.error("Error getting file stats:", error);
@@ -361,20 +664,22 @@ export const getFileStats = async (fileName: string, caseId?: string | null): Pr
   }
 };
 
-// Retrieve file content for download
-export const getFileContent = async (fileName: string, userEmail?: string, caseId?: string | null): Promise<Blob | null> => {
+// Enhanced file content retrieval with decryption
+export const getFileContent = async (
+  fileName: string, 
+  userEmail?: string, 
+  caseId?: string | null,
+  decryptionPassword?: string
+): Promise<{ blob: Blob; metadata?: EncryptedFileMetadata } | null> => {
   try {
+    // Check permissions
+    if (userEmail && !PermissionManager.checkFileAccess(fileName, userEmail)) {
+      throw new Error('Access denied: You do not have permission to access this file');
+    }
+
     const filePath = caseId ? `/my-files/${caseId}/${fileName}` : `/my-files/${fileName}`;
-
-    // Get file stats
     const stat = await client.files.stat(filePath);
-    const mimeType = getMimeType(fileName);
-
-    const stats = {
-      cid: stat.cid.toString(),
-      size: stat.size,
-      type: mimeType
-    };
+    const isEncrypted = fileName.endsWith('.encrypted');
 
     const chunks: Uint8Array[] = [];
     for await (const chunk of client.files.read(filePath)) {
@@ -385,7 +690,7 @@ export const getFileContent = async (fileName: string, userEmail?: string, caseI
       throw new Error("File content is empty");
     }
 
-    // Combine all chunks into a single Uint8Array
+    // Combine chunks
     let totalLength = 0;
     for (const chunk of chunks) {
       totalLength += chunk.length;
@@ -398,88 +703,150 @@ export const getFileContent = async (fileName: string, userEmail?: string, caseI
       offset += chunk.length;
     }
 
-    // Log successful retrieval with user email
+    let finalBlob: Blob;
+    let metadata: EncryptedFileMetadata | undefined;
+
+    if (isEncrypted) {
+      if (!decryptionPassword) {
+        throw new Error('Password required for encrypted file');
+      }
+
+      try {
+        const { fileData, metadata: fileMetadata } = await EncryptionService.extractEncryptedPackage(
+          combinedChunks.buffer,
+          decryptionPassword
+        );
+
+        finalBlob = new Blob([fileData], { type: fileMetadata.mimeType });
+        metadata = fileMetadata;
+      } catch (error) {
+        throw new Error('Failed to decrypt file: Invalid password or corrupted data');
+      }
+    } else {
+      const originalName = fileName;
+      const mimeType = getMimeType(originalName);
+      finalBlob = new Blob([combinedChunks], { type: mimeType });
+    }
+
+    // Log successful retrieval
     logAccess(fileName, "retrieved", "success", {
-      cid: stats.cid,
-      fileSize: stats.size,
-      fileType: stats.type,
-      mimeType: stats.type,
-      userEmail
+      cid: stat.cid.toString(),
+      fileSize: stat.size,
+      fileType: metadata?.mimeType || getMimeType(fileName),
+      mimeType: metadata?.mimeType || getMimeType(fileName),
+      userEmail,
+      isEncrypted,
+      encryptionAlgorithm: metadata?.encryptionAlgorithm
     });
 
-    return new Blob([combinedChunks], { type: stats.type });
+    return { blob: finalBlob, metadata };
   } catch (error) {
-    // Log failed retrieval with user email
     const errorMessage = error instanceof Error ? error.message : String(error);
     logAccess(fileName, "retrieve_attempt", "error", {
       errorDetails: errorMessage,
-      userEmail
+      userEmail,
+      isEncrypted: fileName.endsWith('.encrypted')
     });
 
     console.error("Error retrieving file:", error);
-    return null;
+    throw error;
   }
 };
 
-export const viewFile = async (fileName: string, userEmail?: string, caseId?: string | null): Promise<string | null> => {
+// Enhanced view file function
+export const viewFile = async (
+  fileName: string, 
+  userEmail?: string, 
+  caseId?: string | null,
+  decryptionPassword?: string
+): Promise<string | null> => {
   try {
-    const blob = await getFileContent(fileName, userEmail, caseId);
-    if (!blob) {
+    const result = await getFileContent(fileName, userEmail, caseId, decryptionPassword);
+    if (!result) {
       throw new Error("Could not get file content");
     }
 
-    // Get file stats for logging
+    const url = URL.createObjectURL(result.blob);
+
+    // Log successful view
     const filePath = caseId ? `/my-files/${caseId}/${fileName}` : `/my-files/${fileName}`;
     const stat = await client.files.stat(filePath);
-    const mimeType = getMimeType(fileName);
 
-    const stats = {
-      cid: stat.cid.toString(),
-      size: stat.size,
-      type: mimeType
-    };
-
-    const url = URL.createObjectURL(blob);
-
-    // Log successful view with user email
     logAccess(fileName, "viewed", "success", {
-      cid: stats.cid,
-      fileSize: stats.size,
-      fileType: stats.type,
-      mimeType: stats.type,
-      userEmail
+      cid: stat.cid.toString(),
+      fileSize: stat.size,
+      fileType: result.metadata?.mimeType || getMimeType(fileName),
+      mimeType: result.metadata?.mimeType || getMimeType(fileName),
+      userEmail,
+      isEncrypted: !!result.metadata,
+      encryptionAlgorithm: result.metadata?.encryptionAlgorithm
     });
 
     return url;
   } catch (error) {
-    // Log failed view with user email
     const errorMessage = error instanceof Error ? error.message : String(error);
     logAccess(fileName, "view_attempt", "error", {
       errorDetails: errorMessage,
-      userEmail
+      userEmail,
+      isEncrypted: fileName.endsWith('.encrypted')
     });
 
     console.error("Error viewing file:", error);
-    return null;
+    throw error;
   }
 };
 
-// Function to get all access logs
+// Permission management functions
+export const updateFilePermissions = async (
+  fileName: string,
+  allowedUsers: string[],
+  isPublic: boolean,
+  updatedBy: string
+): Promise<boolean> => {
+  try {
+    const success = PermissionManager.updateFilePermissions(fileName, allowedUsers, isPublic, updatedBy);
+    
+    logAccess(fileName, "permissions_updated", success ? "success" : "error", {
+      userEmail: updatedBy,
+      errorDetails: success ? undefined : "Permission denied or file not found"
+    });
+
+    return success;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logAccess(fileName, "permissions_update_attempt", "error", {
+      errorDetails: errorMessage,
+      userEmail: updatedBy
+    });
+    
+    return false;
+  }
+};
+
+export const getFilePermissions = (fileName: string): FilePermissions | null => {
+  return PermissionManager.getFilePermissions(fileName);
+};
+
+export const getAllFilePermissions = (): FilePermissions[] => {
+  return PermissionManager.getAllPermissions();
+};
+
+// Existing functions (unchanged)
 export const getAccessLogs = async (): Promise<AccessLog[]> => {
   return accessLogs;
 };
 
-// Function to get access logs for a specific file
 export const getFileAccessLogs = async (fileName: string): Promise<AccessLog[]> => {
   return accessLogs.filter(log => log.fileName === fileName);
 };
 
-// Function to export logs as JSON
 export const exportLogsAsJson = (): string => {
   return JSON.stringify(accessLogs, null, 2);
 };
 
-// Function to clear logs
 export const clearLogs = (): void => {
   accessLogs = [];
 };
+
+// Export encryption service for direct use if needed
+export { EncryptionService, PermissionManager };
